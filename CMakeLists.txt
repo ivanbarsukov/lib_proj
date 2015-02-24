@@ -1,5 +1,7 @@
 cmake_minimum_required (VERSION 2.8)
 project (proj4)
+set(the_target proj4)
+set(PROJ_VERSION "4.8.0")
 
 set(CMAKE_CONFIGURATION_TYPES "Debug;Release" CACHE STRING "Configs" FORCE)
 set(CMAKE_COLOR_MAKEFILE ON)
@@ -185,14 +187,13 @@ set(PROJ_CSOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/src/vector1.c 
 )
 
-set(the_target proj4)
-
 add_library(${the_target} SHARED ${PROJ_HHEADERS} ${PROJ_CSOURCES})
 add_library(${the_target}static STATIC ${PROJ_HHEADERS} ${PROJ_CSOURCES})
 
 # For windows, do not allow the compiler to use default target (Vista).
 if(WIN32)
-  add_definitions(-D_USRDLL -D_WIN32_WINNT=0x0501)
+  add_definitions(-D_USRDLL)
+  set(LIB_DEBUG_POSTFIX d)
 endif()
 
 add_definitions(-DSTRICT)
@@ -208,40 +209,24 @@ if(UNIX)
      endif()
 endif()
 
-# if(CMAKE_COMPILER_IS_GNUCXX)
-    # set_source_files_properties(jcdctmgr.c PROPERTIES COMPILE_FLAGS "-O1")
-# endif()
-
-if(WIN32)
-  # Postfix of DLLs:
-  set(LIB_DEBUG_POSTFIX d)
-else()
-  # Postfix of so's:
-  set(LIB_DEBUG_POSTFIX)
+if(UNIX)
+    # On unix-like platforms the library is almost always called libproj
+   set_target_properties(${the_target} ${the_target}static PROPERTIES OUTPUT_NAME proj)
+elseif(BUILD_SHARED_LIBS AND WIN32)
+    # Creates proj4.dll when building shared library version
+    set_target_properties(${the_target} PROPERTIES OUTPUT_NAME proj4)
+    # Creates proj4_inc.lib when building static library version
+    set_target_properties(${the_target}static PROPERTIES OUTPUT_NAME proj4_inc)
 endif()
 
 set_target_properties(${the_target}
-	PROPERTIES OUTPUT_NAME "${the_target}"
-	PROPERTIES VERSION "4.8.0"
+	PROPERTIES VERSION ${VERSION}
 	PROPERTIES SOVERSION 1
 	)
 
-if(WIN32)
-    install(TARGETS ${the_target} ${the_target}static RUNTIME DESTINATION bin)
-    if(CMAKE_CL_64)
-        install(TARGETS ${LIB_NAME} 
-            ARCHIVE DESTINATION lib/x64
-            LIBRARY DESTINATION lib/x64)
-    else()
-        install(TARGETS ${LIB_NAME} 
-            ARCHIVE DESTINATION lib/x86
-            LIBRARY DESTINATION lib/x86)
-    endif()
-else()
-    install(TARGETS ${the_target} ${the_target}static 
-        RUNTIME DESTINATION bin
-        ARCHIVE DESTINATION lib
-        LIBRARY DESTINATION lib
-    )
-endif() 
+install(TARGETS ${the_target} ${the_target}static 
+    RUNTIME DESTINATION bin
+    ARCHIVE DESTINATION lib
+    LIBRARY DESTINATION lib
+)
 
