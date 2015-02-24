@@ -219,10 +219,8 @@ elseif(BUILD_SHARED_LIBS AND WIN32)
     set_target_properties(${the_target}static PROPERTIES OUTPUT_NAME proj4_inc)
 endif()
 
-set_target_properties(${the_target}
-	PROPERTIES VERSION ${VERSION}
-	PROPERTIES SOVERSION 1
-	)
+set_target_properties(${the_target} PROPERTIES VERSION ${VERSION})
+set_target_properties(${the_target} PROPERTIES SOVERSION 1)
 
 install(TARGETS ${the_target} ${the_target}static 
     RUNTIME DESTINATION bin
