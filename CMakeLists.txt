@@ -212,7 +212,7 @@ endif()
 if(UNIX)
     # On unix-like platforms the library is almost always called libproj
    set_target_properties(${the_target} ${the_target}static PROPERTIES OUTPUT_NAME proj)
-elseif(BUILD_SHARED_LIBS AND WIN32)
+elseif(WIN32)
     # Creates proj4.dll when building shared library version
     set_target_properties(${the_target} PROPERTIES OUTPUT_NAME proj4)
     # Creates proj4_inc.lib when building static library version
