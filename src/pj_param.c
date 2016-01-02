@@ -2,8 +2,10 @@
 #include <projects.h>
 #include <stdio.h>
 #include <string.h>
-	paralist * /* create parameter list entry */
-pj_mkparam(char *str) {
+
+/* create parameter list entry */
+
+paralist * pj_mkparam(char *str) {
 	paralist *newitem;
 
 	if((newitem = (paralist *)pj_malloc(sizeof(paralist) + strlen(str))) != NULL) {
@@ -23,22 +25,22 @@ pj_mkparam(char *str) {
 /*      character in `opt' is a parameter type which can take the       */
 /*      values:                                                         */
 /*                                                                      */
-/*       `t' - test for presence, return TRUE/FALSE in PVALUE.i         */
-/*       `i' - integer value returned in PVALUE.i                       */
-/*       `d' - simple valued real input returned in PVALUE.f            */
+/*       `t' - test for presence, return TRUE/FALSE in PROJVALUE.i         */
+/*       `i' - integer value returned in PROJVALUE.i                       */
+/*       `d' - simple valued real input returned in PROJVALUE.f            */
 /*       `r' - degrees (DMS translation applied), returned as           */
-/*             radians in PVALUE.f                                      */
-/*       `s' - string returned in PVALUE.s                              */
-/*       `b' - test for t/T/f/F, return in PVALUE.i                     */
+/*             radians in PROJVALUE.f                                      */
+/*       `s' - string returned in PROJVALUE.s                              */
+/*       `b' - test for t/T/f/F, return in PROJVALUE.i                     */
 /*                                                                      */
 /************************************************************************/
 
-	PVALUE /* test for presence or get parameter value */
-pj_param(projCtx ctx, paralist *pl, const char *opt) {
+/* test for presence or get parameter value */
+PROJVALUE pj_param(projCtx ctx, paralist *pl, const char *opt) {
 
 	int type;
 	unsigned l;
-	PVALUE value;
+	PROJVALUE value;
 
 	if( ctx == NULL )
 		ctx = pj_get_default_ctx();
@@ -61,7 +63,7 @@ pj_param(projCtx ctx, paralist *pl, const char *opt) {
 			value.i = atoi(opt);
 			break;
 		case 'd':	/* simple real input */
-			value.f = atof(opt);
+			value.f = pj_atof(opt);
 			break;
 		case 'r':	/* degrees input */
 			value.f = dmstor_ctx(ctx, opt, 0);
