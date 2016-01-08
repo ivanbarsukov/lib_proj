@@ -266,7 +266,7 @@ set_target_properties(${LIB_NAME}
 ##############################################
 # install
 ##############################################
-export(TARGETS ${LIB_NAME} FILE ${LIB_NAME}-exports.cmake)     
+export(TARGETS ${LIB_NAME} FILE ../${LIB_NAME}-exports.cmake)     
 
 if(NOT SKIP_INSTALL_LIBRARIES AND NOT SKIP_INSTALL_ALL )
     install(TARGETS ${LIB_NAME} 
