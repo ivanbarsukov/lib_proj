@@ -11,7 +11,7 @@
 #################################################################################
 # General settings
 #################################################################################
-cmake_minimum_required(VERSION 2.8.10 FATAL_ERROR)
+cmake_minimum_required(VERSION 2.8.12 FATAL_ERROR)
 
 # proj4 is an ANSI C project
 project(proj4 C)
