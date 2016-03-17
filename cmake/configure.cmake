@@ -12,6 +12,10 @@ include (CheckIncludeFiles)
 include (CheckLibraryExists) 
 include (CheckFunctionExists)
 
+if(CMAKE_GENERATOR_TOOLSET MATCHES "*xp")
+    add_definitions(-D_WIN32_WINNT=0x0501)
+endif()
+
 set(CMAKE_THREAD_PREFER_PTHREAD TRUE)
 find_package (Threads)
 
