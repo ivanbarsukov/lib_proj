@@ -257,6 +257,10 @@ else()
     VERSION "${VERSION}"
     SOVERSION "${API_VERSION}"
     CLEAN_DIRECT_OUTPUT 1)
+    
+    if(HAVE_LIBM)
+        target_link_libraries(${LIB_NAME} m) 
+    endif()
 endif()
 
 set_target_properties(${LIB_NAME}
