@@ -49,11 +49,11 @@ set(PACKAGE_STRING "${PACKAGE_NAME} ${VERSION}")
 set(PACKAGE_TARNAME "${PACKAGE}")
 set(PACKAGE_VERSION "${VERSION}")
 
-configure_file(${CMAKE_MODULE_PATH}/proj_config.cmake.in ${CMAKE_CURRENT_BINARY_DIR}/src/proj_config.h IMMEDIATE @ONLY)
+configure_file(${CMAKE_SOURCE_DIR}/cmake/proj_config.cmake.in ${CMAKE_CURRENT_BINARY_DIR}/src/proj_config.h IMMEDIATE @ONLY)
 add_definitions(-DHAVE_CONFIG_H) 
 
 
-configure_file( ${CMAKE_MODULE_PATH}/proj.pc.cmake.in ${CMAKE_CURRENT_BINARY_DIR}/proj.pc @ONLY)
+configure_file(${CMAKE_SOURCE_DIR}/cmake/proj.pc.cmake.in ${CMAKE_CURRENT_BINARY_DIR}/proj.pc @ONLY)
 
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/proj.pc DESTINATION "${INSTALL_PKGCONFIG_DIR}")
 

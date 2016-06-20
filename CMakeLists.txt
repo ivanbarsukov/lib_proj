@@ -41,7 +41,7 @@ set(API_VERSION ${PROJECT_VERSION_MINOR})
 report_version(${PROJECT_NAME} "${VERSION}")  
 
 include(configure)
-configure_file(${CMAKE_MODULE_PATH}/cmake_uninstall.cmake.in ${CMAKE_CURRENT_BINARY_DIR}/cmake_uninstall.cmake IMMEDIATE @ONLY)
+configure_file(${CMAKE_SOURCE_DIR}/cmake/cmake_uninstall.cmake.in ${CMAKE_CURRENT_BINARY_DIR}/cmake_uninstall.cmake IMMEDIATE @ONLY)
 
 add_subdirectory(nad)
 add_subdirectory(src)
