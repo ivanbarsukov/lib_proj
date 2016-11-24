@@ -239,16 +239,27 @@ if(BUILD_SHARED_LIBS)
     if(WIN32)
         set(ALL_LIBPROJ_SOURCES ${ALL_LIBPROJ_SOURCES} proj.def )
     endif()
-    
+
     add_library(${LIB_NAME} SHARED ${ALL_LIBPROJ_SOURCES} ${ALL_LIBPROJ_HEADERS} ${PROJ_RESOURCES})
-else()    
+elseif(OSX_FRAMEWORK)
+    add_library(${LIB_NAME} SHARED ${ALL_LIBPROJ_SOURCES} ${ALL_LIBPROJ_HEADERS} ${PROJ_RESOURCES})
+    set_target_properties(${LIB_NAME} PROPERTIES
+      FRAMEWORK TRUE
+      FRAMEWORK_VERSION ${FRAMEWORK_VERSION}
+      MACOSX_FRAMEWORK_SHORT_VERSION_STRING ${VERSION}
+      MACOSX_FRAMEWORK_BUNDLE_VERSION ${VERSION}
+      MACOSX_FRAMEWORK_IDENTIFIER org.libproj.libproj
+      XCODE_ATTRIBUTE_INSTALL_PATH "@rpath"
+      PUBLIC_HEADER "${ALL_LIBPROJ_HEADERS}")
+else()
     if(CMAKE_COMPILER_IS_GNUCC OR CMAKE_COMPILER_IS_GNUCXX)
         set( CMAKE_CXX_FLAGS "-fpic ${CMAKE_CXX_FLAGS}" )
-        set( CMAKE_C_FLAGS   "-fpic ${CMAKE_C_FLAGS}" )  
+        set( CMAKE_C_FLAGS   "-fpic ${CMAKE_C_FLAGS}" )
     endif()
     add_library(${LIB_NAME} STATIC ${ALL_LIBPROJ_SOURCES} ${ALL_LIBPROJ_HEADERS} ${PROJ_RESOURCES})
-endif()   
+endif()
 
+if(NOT OSX_FRAMEWORK)
 if(WIN32)
   set_target_properties(${LIB_NAME}
     PROPERTIES
@@ -260,10 +271,11 @@ else()
     VERSION "${VERSION}"
     SOVERSION "${API_VERSION}"
     CLEAN_DIRECT_OUTPUT 1)
-    
+
     if(HAVE_LIBM)
-        target_link_libraries(${LIB_NAME} m) 
+        target_link_libraries(${LIB_NAME} m)
     endif()
+endif()
 endif()
 
 set_target_properties(${LIB_NAME}
@@ -273,16 +285,17 @@ set_target_properties(${LIB_NAME}
 ##############################################
 # install
 ##############################################
-export(TARGETS ${LIB_NAME} FILE ../${LIB_NAME}-exports.cmake)     
+export(TARGETS ${LIB_NAME} FILE ../${LIB_NAME}-exports.cmake)
 
 if(NOT SKIP_INSTALL_LIBRARIES AND NOT SKIP_INSTALL_ALL )
-    install(TARGETS ${LIB_NAME} 
+    install(TARGETS ${LIB_NAME}
         EXPORT targets
         RUNTIME DESTINATION "${INSTALL_BIN_DIR}"
         ARCHIVE DESTINATION "${INSTALL_LIB_DIR}"
-        LIBRARY DESTINATION "${INSTALL_LIB_DIR}" )
+        LIBRARY DESTINATION "${INSTALL_LIB_DIR}"
+        FRAMEWORK DESTINATION "${INSTALL_LIB_DIR}")
 endif()
-        
+
 
 if(NOT SKIP_INSTALL_HEADERS AND NOT SKIP_INSTALL_ALL )
   install(FILES ${ALL_LIBPROJ_HEADERS} DESTINATION ${INSTALL_INC_DIR})

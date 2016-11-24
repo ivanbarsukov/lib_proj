@@ -9,7 +9,7 @@
 
 include (CheckSymbolExists)
 include (CheckIncludeFiles)
-include (CheckLibraryExists) 
+include (CheckLibraryExists)
 include (CheckFunctionExists)
 
 if(CMAKE_GENERATOR_TOOLSET MATCHES "v([0-9]+)_xp")
@@ -39,8 +39,8 @@ check_include_files ("stdlib.h;stdarg.h;string.h;float.h" STDC_HEADERS)
 
 check_function_exists(localeconv HAVE_LOCALECONV)
 
-# check libm need on unix 
-check_library_exists(m ceil "" HAVE_LIBM) 
+# check libm need on unix
+check_library_exists(m ceil "" HAVE_LIBM)
 
 set(PACKAGE "proj")
 set(PACKAGE_BUGREPORT "warmerdam@pobox.com")
@@ -50,10 +50,9 @@ set(PACKAGE_TARNAME "${PACKAGE}")
 set(PACKAGE_VERSION "${VERSION}")
 
 configure_file(${CMAKE_SOURCE_DIR}/cmake/proj_config.cmake.in ${CMAKE_CURRENT_BINARY_DIR}/src/proj_config.h IMMEDIATE @ONLY)
-add_definitions(-DHAVE_CONFIG_H) 
+add_definitions(-DHAVE_CONFIG_H)
 
-
-configure_file(${CMAKE_SOURCE_DIR}/cmake/proj.pc.cmake.in ${CMAKE_CURRENT_BINARY_DIR}/proj.pc @ONLY)
-
-install(FILES ${CMAKE_CURRENT_BINARY_DIR}/proj.pc DESTINATION "${INSTALL_PKGCONFIG_DIR}")
-
+if(NOT OSX_FRAMEWORK)
+    configure_file(${CMAKE_SOURCE_DIR}/cmake/proj.pc.cmake.in ${CMAKE_CURRENT_BINARY_DIR}/proj.pc @ONLY)
+    install(FILES ${CMAKE_CURRENT_BINARY_DIR}/proj.pc DESTINATION "${INSTALL_PKGCONFIG_DIR}")
+endif()
