@@ -2,10 +2,8 @@
 #include <projects.h>
 #include <stdio.h>
 #include <string.h>
-
-/* create parameter list entry */
-
-paralist * pj_mkparam(char *str) {
+	paralist * /* create parameter list entry */
+pj_mkparam(char *str) {
 	paralist *newitem;
 
 	if((newitem = (paralist *)pj_malloc(sizeof(paralist) + strlen(str))) != NULL) {
@@ -35,8 +33,8 @@ paralist * pj_mkparam(char *str) {
 /*                                                                      */
 /************************************************************************/
 
-/* test for presence or get parameter value */
-PROJVALUE pj_param(projCtx ctx, paralist *pl, const char *opt) {
+	PROJVALUE /* test for presence or get parameter value */
+pj_param(projCtx ctx, paralist *pl, const char *opt) {
 
 	int type;
 	unsigned l;

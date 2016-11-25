@@ -29,6 +29,7 @@
 
 #define PJ_LIB__
 #include <projects.h>
+#include <geodesic.h>
 #include <stdio.h>
 #include <string.h>
 #include <errno.h>
@@ -110,7 +111,7 @@ get_opt(projCtx ctx, paralist **start, PAFile fid, char *name, paralist *next,
     *sword = 't';
 
     /* loop till we find our target keyword */
-    while (*next_char) 
+    while (*next_char)
     {
         next_char = fill_buffer(state, next_char);
 
@@ -119,9 +120,9 @@ get_opt(projCtx ctx, paralist **start, PAFile fid, char *name, paralist *next,
             next_char++;
 
         next_char = fill_buffer(state, next_char);
-        
+
         /* for comments, skip past end of line. */
-        if( *next_char == '#' ) 
+        if( *next_char == '#' )
         {
             while( *next_char && *next_char != '\n' )
                 next_char++;
@@ -131,11 +132,11 @@ get_opt(projCtx ctx, paralist **start, PAFile fid, char *name, paralist *next,
                 next_char++;
             if (*next_char == '\r')
                 next_char++;
-            
-        } 
+
+        }
 
         /* Is this our target? */
-        else if( *next_char == '<' ) 
+        else if( *next_char == '<' )
         {
             /* terminate processing target on the next block definition */
             if (in_target)
@@ -143,7 +144,7 @@ get_opt(projCtx ctx, paralist **start, PAFile fid, char *name, paralist *next,
 
             next_char++;
             if (strncmp(name, next_char, len) == 0
-                && next_char[len] == '>') 
+                && next_char[len] == '>')
             {
                 /* skip past target word */
                 next_char += len + 1;
@@ -151,14 +152,14 @@ get_opt(projCtx ctx, paralist **start, PAFile fid, char *name, paralist *next,
                 if(found_def)
                     *found_def = 1;
             }
-            else 
+            else
             {
                 /* skip past end of line */
                 while( *next_char && *next_char != '\n' )
                     next_char++;
             }
         }
-        else if (in_target) 
+        else if (in_target)
         {
             const char *start_of_word = next_char;
             int word_len = 0;
@@ -183,27 +184,27 @@ get_opt(projCtx ctx, paralist **start, PAFile fid, char *name, paralist *next,
             if (!pj_param(ctx, *start, sword).i) {
                 /* don't default ellipse if datum, ellps or any earth model
                    information is set. */
-                if( strncmp(sword+1,"ellps=",6) != 0 
-                    || (!pj_param(ctx, *start, "tdatum").i 
-                        && !pj_param(ctx, *start, "tellps").i 
-                        && !pj_param(ctx, *start, "ta").i 
-                        && !pj_param(ctx, *start, "tb").i 
-                        && !pj_param(ctx, *start, "trf").i 
+                if( strncmp(sword+1,"ellps=",6) != 0
+                    || (!pj_param(ctx, *start, "tdatum").i
+                        && !pj_param(ctx, *start, "tellps").i
+                        && !pj_param(ctx, *start, "ta").i
+                        && !pj_param(ctx, *start, "tb").i
+                        && !pj_param(ctx, *start, "trf").i
                         && !pj_param(ctx, *start, "tf").i) )
                 {
                     next = next->next = pj_mkparam(sword+1);
                 }
             }
-            
+
         }
-        else 
+        else
         {
             /* skip past word */
             while( *next_char && !isspace(*next_char) )
                 next_char++;
-            
+
         }
-    }        
+    }
 
     if (errno == 25)
         errno = 0;
@@ -229,7 +230,7 @@ get_defaults(projCtx ctx, paralist **start, paralist *next, char *name) {
     if (errno)
         errno = 0; /* don't care if can't open file */
     ctx->last_errno = 0;
-    
+
     return next;
 }
 
@@ -245,11 +246,11 @@ get_init(projCtx ctx, paralist **start, paralist *next, char *name,
     const paralist *orig_next = next;
 
     (void)strncpy(fname, name, MAX_PATH_FILENAME + ID_TAG_MAX + 1);
-	
-    /* 
-    ** Search for file/key pair in cache 
+
+    /*
+    ** Search for file/key pair in cache
     */
-	
+
     init_items = pj_search_initcache( name );
     if( init_items != NULL )
     {
@@ -275,8 +276,8 @@ get_init(projCtx ctx, paralist **start, paralist *next, char *name,
     if (errno == 25)
         errno = 0; /* unknown problem with some sys errno<-25 */
 
-    /* 
-    ** If we seem to have gotten a result, insert it into the 
+    /*
+    ** If we seem to have gotten a result, insert it into the
     ** init file cache.
     */
     if( next != NULL && next != orig_next )
@@ -308,7 +309,7 @@ pj_init_plus_ctx( projCtx ctx, const char *definition )
     char	*defn_copy;
     int		argc = 0, i, blank_count = 0;
     PJ	    *result = NULL;
-    
+
     /* make a copy that we can manipulate */
     defn_copy = (char *) pj_malloc( strlen(definition)+1 );
     strcpy( defn_copy, definition );
@@ -328,13 +329,13 @@ pj_init_plus_ctx( projCtx ctx, const char *definition )
                     defn_copy[i - blank_count] = '\0';
                     blank_count = 0;
                 }
-                
+
                 if( argc+1 == MAX_ARG )
                 {
                     pj_ctx_set_errno( ctx, -44 );
                     goto bum_call;
                 }
-                
+
                 argv[argc++] = defn_copy + i + 1;
             }
             break;
@@ -448,14 +449,44 @@ pj_init_ctx(projCtx ctx, int argc, char **argv) {
     PIN->a_orig = PIN->a;
     PIN->es_orig = PIN->es;
 
-    PIN->e = sqrt(PIN->es);
+    /* Compute some ancillary ellipsoidal parameters */
+
+    PIN->e = sqrt(PIN->es);      /* eccentricity */
+    PIN->alpha = asin (PIN->e);  /* angular eccentricity */
+
+    /* second eccentricity */
+    PIN->e2  = tan (PIN->alpha);
+    PIN->e2s = PIN->e2 * PIN->e2;
+
+    /* third eccentricity */
+    PIN->e3    = sin (PIN->alpha) / sqrt(2 - sin (PIN->alpha)*sin (PIN->alpha));
+    PIN->e3s = PIN->e3 * PIN->e3;
+
+    /* flattening */
+    PIN->f  = 1 - cos (PIN->alpha);   /* = 1 - sqrt (1 - PIN->es); */
+    PIN->rf = PIN->f? 1/PIN->f: HUGE_VAL;
+
+    /* second flattening */
+    PIN->f2 = 1/cos (PIN->alpha) - 1;
+    PIN->rf = PIN->f2? 1/PIN->f2: HUGE_VAL;
+
+    /* third flattening */
+    PIN->n  = pow (tan (PIN->alpha/2), 2);
+    PIN->rn = PIN->n? 1/PIN->n: HUGE_VAL;
+
+    /* ...and a few more */
+    PIN->b  = (1 - PIN->f)*PIN->a;
+    PIN->rb = 1. / PIN->b;
     PIN->ra = 1. / PIN->a;
+
     PIN->one_es = 1. - PIN->es;
     if (PIN->one_es == 0.) { pj_ctx_set_errno( ctx, -6 ); goto bum_call; }
     PIN->rone_es = 1./PIN->one_es;
 
+
+
     /* Now that we have ellipse information check for WGS84 datum */
-    if( PIN->datum_type == PJD_3PARAM 
+    if( PIN->datum_type == PJD_3PARAM
         && PIN->datum_params[0] == 0.0
         && PIN->datum_params[1] == 0.0
         && PIN->datum_params[2] == 0.0
@@ -464,7 +495,7 @@ pj_init_ctx(projCtx ctx, int argc, char **argv) {
     {
         PIN->datum_type = PJD_WGS84;
     }
-        
+
     /* set PIN->geoc coordinate system */
     PIN->geoc = (PIN->es && pj_param(ctx, start, "bgeoc").i);
 
@@ -532,7 +563,7 @@ pj_init_ctx(projCtx ctx, int argc, char **argv) {
 
     /* set units */
     s = 0;
-    if ((name = pj_param(ctx, start, "sunits").s) != NULL) { 
+    if ((name = pj_param(ctx, start, "sunits").s) != NULL) {
         for (i = 0; (s = pj_units[i].id) && strcmp(name, s) ; ++i) ;
         if (!s) { pj_ctx_set_errno( ctx, -7 ); goto bum_call; }
         s = pj_units[i].to_meter;
@@ -547,7 +578,7 @@ pj_init_ctx(projCtx ctx, int argc, char **argv) {
 
     /* set vertical units */
     s = 0;
-    if ((name = pj_param(ctx, start, "svunits").s) != NULL) { 
+    if ((name = pj_param(ctx, start, "svunits").s) != NULL) {
         for (i = 0; (s = pj_units[i].id) && strcmp(name, s) ; ++i) ;
         if (!s) { pj_ctx_set_errno( ctx, -7 ); goto bum_call; }
         s = pj_units[i].to_meter;
@@ -564,7 +595,7 @@ pj_init_ctx(projCtx ctx, int argc, char **argv) {
 
     /* prime meridian */
     s = 0;
-    if ((name = pj_param(ctx, start, "spm").s) != NULL) { 
+    if ((name = pj_param(ctx, start, "spm").s) != NULL) {
         const char *value = NULL;
         char *next_str = NULL;
 
@@ -576,8 +607,8 @@ pj_init_ctx(projCtx ctx, int argc, char **argv) {
                 break;
             }
         }
-            
-        if( value == NULL 
+
+        if( value == NULL
             && (dmstor_ctx(ctx,name,&next_str) != 0.0  || *name == '0')
             && *next_str == '\0' )
             value = name;
@@ -587,6 +618,11 @@ pj_init_ctx(projCtx ctx, int argc, char **argv) {
     }
     else
         PIN->from_greenwich = 0.0;
+
+    /* Private object for the geodesic functions */
+    PIN->geod = pj_calloc (1, sizeof (struct geod_geodesic));
+    if (0!=PIN->geod)
+        geod_init(PIN->geod, PIN->a,  (1 - sqrt (1 - PIN->es)));
 
     /* projection specific initialization */
     if (!(PIN = (*proj)(PIN)) || ctx->last_errno) {
@@ -635,7 +671,34 @@ pj_free(PJ *P) {
         if( P->catalog != NULL )
             pj_dalloc( P->catalog );
 
+        if( P->geod != NULL )
+            pj_dalloc( P->geod );
+
         /* free projection parameters */
         P->pfree(P);
     }
+}
+
+
+
+
+
+
+
+
+/************************************************************************/
+/*                              pj_prepare()                            */
+/*                                                                      */
+/*      Helper function for the PJ_xxxx functions providing the         */
+/*      projection specific setup for each projection type.             */
+/*                                                                      */
+/*      Currently not used, but placed here as part of the  material    */
+/*      Demonstrating the idea for a future PJ_xxx architecture         */
+/*      (cf. pj_minimal.c)                                              */
+/*                                                                      */
+/************************************************************************/
+void pj_prepare (PJ *P, const char *description, void (*freeup)(struct PJconsts *), size_t sizeof_struct_opaque) {
+    P->descr = description;
+    P->pfree = freeup;
+    P->opaque  = pj_calloc (1, sizeof_struct_opaque);
 }
