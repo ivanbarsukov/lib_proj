@@ -26,21 +26,27 @@
 
 function(check_version major minor patch)
 
+    set(VERSION_FILE_PATH "${CMAKE_SOURCE_DIR}/src/proj_api.h")
     # Read version information from configure.ac.
-    file(READ "${CMAKE_SOURCE_DIR}/src/proj_api.h" PROJ_API_H_CONTENTS)
+    file(READ "${VERSION_FILE_PATH}" PROJ_API_H_CONTENTS)
     string(REGEX MATCH "PJ_VERSION[ \t]+([0-9]+)"
       PJ_VERSION ${PROJ_API_H_CONTENTS})
     string (REGEX MATCH "([0-9]+)"
       PJ_VERSION ${PJ_VERSION})
-    
+
     string(SUBSTRING ${PJ_VERSION} 0 1 PROJ4_MAJOR_VERSION)
     string(SUBSTRING ${PJ_VERSION} 1 1 PROJ4_MINOR_VERSION)
     string(SUBSTRING ${PJ_VERSION} 2 1 PROJ4_PATCH_VERSION)
-    
-    
+
+
     set(${major} ${PROJ4_MAJOR_VERSION} PARENT_SCOPE)
     set(${minor} ${PROJ4_MINOR_VERSION} PARENT_SCOPE)
     set(${patch} ${PROJ4_PATCH_VERSION} PARENT_SCOPE)
+
+
+    # Store version string in file for installer needs
+    file(TIMESTAMP "${VERSION_FILE_PATH}" VERSION_DATETIME "%Y-%m-%d %H:%M:%S" UTC)
+    file(WRITE ${CMAKE_BINARY_DIR}/version.str "${PROJ4_MAJOR_VERSION}.${PROJ4_MINOR_VERSION}.${PROJ4_PATCH_VERSION}\n${VERSION_DATETIME}")
 
 endfunction(check_version)
 
@@ -50,7 +56,7 @@ function(report_version name ver)
     string(ASCII 27 Esc)
     set(BoldYellow  "${Esc}[1;33m")
     set(ColourReset "${Esc}[m")
-        
+
     message(STATUS "${BoldYellow}${name} version ${ver}${ColourReset}")
-    
-endfunction()  
+
+endfunction()

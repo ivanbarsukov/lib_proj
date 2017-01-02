@@ -248,7 +248,6 @@ endif(JNI_SUPPORT)
 set(ALL_LIBPROJ_SOURCES ${SRC_LIBPROJ_PJ} ${SRC_LIBPROJ_CORE})
 set(ALL_LIBPROJ_HEADERS ${HEADERS_LIBPROJ} )
 
-set(LIB_NAME proj)
 if(BUILD_SHARED_LIBS)
     if(WIN32)
         set(ALL_LIBPROJ_SOURCES ${ALL_LIBPROJ_SOURCES} proj.def )
@@ -299,8 +298,6 @@ set_target_properties(${LIB_NAME}
 ##############################################
 # install
 ##############################################
-export(TARGETS ${LIB_NAME} FILE ../${LIB_NAME}-exports.cmake)
-
 if(NOT SKIP_INSTALL_LIBRARIES AND NOT SKIP_INSTALL_ALL )
     install(TARGETS ${LIB_NAME}
         EXPORT targets

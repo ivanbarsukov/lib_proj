@@ -48,7 +48,7 @@ file(GLOB GSB_FILES  *.gsb)
 set(GRIDSHIFT_FILES ${GSB_FILES})
 
 if(OSX_FRAMEWORK)
-    set(installdest ${INSTALL_LIB_DIR}/${FRAMEWORK_NAME}.framework/Versions/${FRAMEWORK_VERSION}/Resources/share)
+    set(installdest ${INSTALL_LIB_DIR}/${FRAMEWORK_NAME}.framework/Versions/${FRAMEWORK_VERSION}/Resources/proj)
 else()
     set(installdest ${INSTALL_DATA_DIR})
 endif()

@@ -28,29 +28,15 @@ if(OSX_FRAMEWORK AND (BUILD_SHARED_LIBS OR BUILD_STATIC_LIBS))
 endif()
 
 if(OSX_FRAMEWORK)
+    set(FRAMEWORK_NAME proj)
     set(INSTALL_BIN_DIR "${CMAKE_INSTALL_PREFIX}/Applications" CACHE INTERNAL "Installation directory for executables" FORCE)
     set(INSTALL_LIB_DIR "${CMAKE_INSTALL_PREFIX}/Library/Frameworks" CACHE INTERNAL "Installation directory for libraries" FORCE)
+    set(INSTALL_INC_DIR "${INSTALL_LIB_DIR}/${FRAMEWORK_NAME}.framework/Headers" CACHE INTERNAL "Installation directory for headers" FORCE)
     set(SKIP_INSTALL_HEADERS ON)
     set(SKIP_INSTALL_EXECUTABLES ON)
     set(SKIP_INSTALL_FILES ON)
     set(SKIP_INSTALL_EXPORT ON)
-
     set(CMAKE_MACOSX_RPATH ON)
-
-    # use, i.e. don't skip the full RPATH for the build tree
-    set(CMAKE_SKIP_BUILD_RPATH  TRUE)
-
-    # when building, don't use the install RPATH already
-    # (but later on when installing)
-    set(CMAKE_BUILD_WITH_INSTALL_RPATH FALSE)
-
-    # the RPATH to be used when installing
-    set(CMAKE_INSTALL_RPATH "${INSTALL_LIB_DIR}")
-
-    # don't add the automatically determined parts of the RPATH
-    # which point to directories outside the build tree to the install RPATH
-    set(CMAKE_INSTALL_RPATH_USE_LINK_PATH FALSE)
-    set(FRAMEWORK_NAME proj)
 else()
     include(GNUInstallDirs)
 
@@ -69,7 +55,10 @@ include(util)
 check_version(PROJECT_VERSION_MAJOR PROJECT_VERSION_MINOR PROJECT_VERSION_PATCH)
 
 set(VERSION "${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}.${PROJECT_VERSION_PATCH}")
-set(FRAMEWORK_VERSION "${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}")
+if(OSX_FRAMEWORK)
+    set(FRAMEWORK_VERSION "${PROJECT_VERSION_MAJOR}")
+endif()
+
 set(API_VERSION ${PROJECT_VERSION_MINOR})
 report_version(${PROJECT_NAME} "${VERSION}")
 
@@ -77,9 +66,32 @@ include(configure)
 configure_file(${CMAKE_SOURCE_DIR}/cmake/cmake_uninstall.cmake.in ${CMAKE_CURRENT_BINARY_DIR}/cmake_uninstall.cmake IMMEDIATE @ONLY)
 
 add_subdirectory(nad)
+set(LIB_NAME proj)
 add_subdirectory(src)
 if(NOT SKIP_BUILD_DOCS)
-add_subdirectory(man)
+    add_subdirectory(man)
+endif()
+
+export(TARGETS ${LIB_NAME} FILE ${LIB_NAME}-exports.cmake)
+
+if (REGISTER_PACKAGE)
+
+    set(EXPORT_PACKAGE_NAME PROJ4)
+    set(EXPORT_PACKAGE_NAME_UPPER ${EXPORT_PACKAGE_NAME})
+    set(EXPORT_PACKAGE_LIB_NAME ${LIB_NAME})
+
+    export(PACKAGE ${EXPORT_PACKAGE_NAME})
+
+    include(CMakePackageConfigHelpers)
+    configure_package_config_file(
+        ${CMAKE_SOURCE_DIR}/cmake/PackageConfig.cmake.in
+        ${CMAKE_CURRENT_BINARY_DIR}/${EXPORT_PACKAGE_NAME}Config.cmake
+        INSTALL_DESTINATION ${INSTALL_LIB_DIR}/cmake
+        PATH_VARS INSTALL_INC_DIR )
+    write_basic_package_version_file(
+        ${CMAKE_CURRENT_BINARY_DIR}/${EXPORT_PACKAGE_NAME}ConfigVersion.cmake
+        VERSION ${VERSION}
+        COMPATIBILITY AnyNewerVersion )
 endif()
 
 add_custom_target(uninstall COMMAND ${CMAKE_COMMAND} -P ${CMAKE_CURRENT_BINARY_DIR}/cmake_uninstall.cmake)
