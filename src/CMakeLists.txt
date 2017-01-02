@@ -272,23 +272,27 @@ else()
     add_library(${LIB_NAME} STATIC ${ALL_LIBPROJ_SOURCES} ${ALL_LIBPROJ_HEADERS} ${PROJ_RESOURCES})
 endif()
 
-if(NOT OSX_FRAMEWORK)
-if(WIN32)
-  set_target_properties(${LIB_NAME}
-    PROPERTIES
-    VERSION "${VERSION}"
-    CLEAN_DIRECT_OUTPUT 1)
+if(OSX_FRAMEWORK)
+    set_target_properties(${LIB_NAME} PROPERTIES VERSION "${VERSION}"
+        SOVERSION "${API_VERSION}"
+        CLEAN_DIRECT_OUTPUT 1)
 else()
-  set_target_properties(${LIB_NAME}
-    PROPERTIES
-    VERSION "${VERSION}"
-    SOVERSION "${API_VERSION}"
-    CLEAN_DIRECT_OUTPUT 1)
+    if(WIN32)
+      set_target_properties(${LIB_NAME}
+        PROPERTIES
+        VERSION "${VERSION}"
+        CLEAN_DIRECT_OUTPUT 1)
+    else()
+      set_target_properties(${LIB_NAME}
+        PROPERTIES
+        VERSION "${VERSION}"
+        SOVERSION "${API_VERSION}"
+        CLEAN_DIRECT_OUTPUT 1)
 
-    if(HAVE_LIBM)
-        target_link_libraries(${LIB_NAME} m)
+        if(HAVE_LIBM)
+            target_link_libraries(${LIB_NAME} m)
+        endif()
     endif()
-endif()
 endif()
 
 set_target_properties(${LIB_NAME}
