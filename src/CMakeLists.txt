@@ -291,6 +291,9 @@ if(BUILD_APPS)
 
     add_executable(cs2cs ${CS2CS_SRC} ${CS2CS_INCLUDE})
     target_link_libraries(cs2cs ${LIB_NAME})
+    if(OSX_FRAMEWORK)
+        set_target_properties(cs2cs PROPERTIES INSTALL_RPATH "@executable_path/../../Library/Frameworks")
+    endif()
     install(TARGETS cs2cs
             RUNTIME DESTINATION ${INSTALL_BIN_DIR})
 
@@ -310,6 +313,9 @@ if(BUILD_APPS)
         PROPERTIES
         OUTPUT_NAME proj)
     target_link_libraries(binproj ${LIB_NAME})
+    if(OSX_FRAMEWORK)
+        set_target_properties(binproj PROPERTIES INSTALL_RPATH "@executable_path/../../Library/Frameworks")
+    endif()
     install(TARGETS binproj
             RUNTIME DESTINATION ${INSTALL_BIN_DIR})
 
@@ -326,6 +332,9 @@ if(BUILD_APPS)
     #Executable
     add_executable(geod ${GEOD_SRC} ${GEOD_INCLUDE})
     target_link_libraries(geod ${LIB_NAME})
+    if(OSX_FRAMEWORK)
+        set_target_properties(geod PROPERTIES INSTALL_RPATH "@executable_path/../../Library/Frameworks")
+    endif()
     install(TARGETS geod
             RUNTIME DESTINATION ${INSTALL_BIN_DIR})
 
@@ -338,6 +347,9 @@ if(BUILD_APPS)
     #Executable
     add_executable(nad2bin ${NAD2BIN_SRC})
     target_link_libraries(nad2bin ${LIB_NAME})
+    if(OSX_FRAMEWORK)
+        set_target_properties(nad2bin PROPERTIES INSTALL_RPATH "@executable_path/../../Library/Frameworks")
+    endif()
     install(TARGETS nad2bin
             RUNTIME DESTINATION ${INSTALL_BIN_DIR})
 endif()

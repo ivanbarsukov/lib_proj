@@ -26,16 +26,17 @@
 ################################################################################
 
 if(BUILD_TESTING)
-    set(GEODTEST_SRC ${PROJECT_SOURCE_DIR}/src/geodtest.c)
-    set(GEODTEST_INCLUDE)
+    if(UNIX) # Disable test on Windows
+        set(GEODTEST_SRC ${PROJECT_SOURCE_DIR}/src/geodtest.c)
+        set(GEODTEST_INCLUDE)
 
-    #Executable
-    add_executable(geodtest ${GEODTEST_SRC} ${GEODTEST_INCLUDE})
-    target_link_libraries(geodtest ${LIB_NAME})
-    # Do not install
+        #Executable
+        add_executable(geodtest ${GEODTEST_SRC} ${GEODTEST_INCLUDE})
+        target_link_libraries(geodtest ${LIB_NAME})
 
-    # Instead run as a test
-    add_test(NAME geodesic-test COMMAND geodtest)
+        # Instead run as a test
+        add_test(NAME geodesic-test COMMAND geodtest)
+    endif()
 
     # Find python
     find_package(PythonInterp)
