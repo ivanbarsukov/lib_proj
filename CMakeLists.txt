@@ -15,7 +15,15 @@
 cmake_minimum_required(VERSION 2.8.12 FATAL_ERROR)
 
 # proj4 is an ANSI C project
-project(proj4 C)
+project(proj4)
+
+if(NOT DEFINED PACKAGE_VENDOR)
+    set(PACKAGE_VENDOR NextGIS)
+endif()
+
+if(NOT DEFINED PACKAGE_BUGREPORT)
+    set(PACKAGE_BUGREPORT info@nextgis.com)
+endif()
 
 # some init settings
 set(CMAKE_COLOR_MAKEFILE ON)
@@ -28,10 +36,10 @@ if(OSX_FRAMEWORK AND (BUILD_SHARED_LIBS OR BUILD_STATIC_LIBS))
 endif()
 
 if(OSX_FRAMEWORK)
-    set(FRAMEWORK_NAME proj)
-    set(INSTALL_BIN_DIR "${CMAKE_INSTALL_PREFIX}/Applications" CACHE INTERNAL "Installation directory for executables" FORCE)
-    set(INSTALL_LIB_DIR "${CMAKE_INSTALL_PREFIX}/Library/Frameworks" CACHE INTERNAL "Installation directory for libraries" FORCE)
-    set(INSTALL_INC_DIR "${INSTALL_LIB_DIR}/${FRAMEWORK_NAME}.framework/Headers" CACHE INTERNAL "Installation directory for headers" FORCE)
+    set(INSTALL_BIN_DIR "bin" CACHE INTERNAL "Installation directory for executables" FORCE)
+    set(INSTALL_LIB_DIR "Library/Frameworks" CACHE INTERNAL "Installation directory for libraries" FORCE)
+    set(INSTALL_INC_DIR "${INSTALL_LIB_DIR}/${PROJECT_NAME}.framework/Headers" CACHE INTERNAL "Installation directory for headers" FORCE)
+    set(INSTALL_CMAKECONF_DIR ${INSTALL_LIB_DIR}/${PROJECT_NAME}.framework/Resources/CMake CACHE INTERNAL "Installation directory for cmake config files" FORCE)
     set(SKIP_INSTALL_HEADERS ON)
     set(SKIP_INSTALL_EXECUTABLES ON)
     set(SKIP_INSTALL_FILES ON)
@@ -40,13 +48,14 @@ if(OSX_FRAMEWORK)
 else()
     include(GNUInstallDirs)
 
-    set(INSTALL_BIN_DIR ${CMAKE_INSTALL_FULL_BINDIR} CACHE INTERNAL "Installation directory for executables" FORCE)
-    set(INSTALL_LIB_DIR ${CMAKE_INSTALL_FULL_LIBDIR} CACHE INTERNAL "Installation directory for libraries" FORCE)
-    set(INSTALL_INC_DIR ${CMAKE_INSTALL_FULL_INCLUDEDIR} CACHE INTERNAL "Installation directory for headers" FORCE)
-    set(INSTALL_SHARE_DIR ${CMAKE_INSTALL_FULL_DATADIR} CACHE INTERNAL "Shared files directory" FORCE)
+    set(INSTALL_BIN_DIR ${CMAKE_INSTALL_BINDIR} CACHE INTERNAL "Installation directory for executables" FORCE)
+    set(INSTALL_LIB_DIR ${CMAKE_INSTALL_LIBDIR} CACHE INTERNAL "Installation directory for libraries" FORCE)
+    set(INSTALL_INC_DIR ${CMAKE_INSTALL_INCLUDEDIR} CACHE INTERNAL "Installation directory for headers" FORCE)
+    set(INSTALL_SHARE_DIR ${CMAKE_INSTALL_DATADIR} CACHE INTERNAL "Shared files directory" FORCE)
     set(INSTALL_DATA_DIR "${INSTALL_SHARE_DIR}/proj" CACHE INTERNAL "Shared files directory" FORCE)
-    set(INSTALL_DOC_DIR ${CMAKE_INSTALL_FULL_DOCDIR} CACHE INTERNAL "Doc files directory" FORCE)
+    set(INSTALL_MAN_DIR ${CMAKE_INSTALL_MANDIR} CACHE INTERNAL "Man files directory" FORCE)
     set(INSTALL_PKGCONFIG_DIR "${INSTALL_LIB_DIR}/pkgconfig" CACHE INTERNAL "Installation directory for pkgconfig (.pc) files" FORCE)
+    set(INSTALL_CMAKECONF_DIR ${CMAKE_INSTALL_DATADIR}/${PROJECT_NAME}/CMake CACHE INTERNAL "Installation directory for cmake config files" FORCE)
 endif()
 
 include(util)
@@ -57,6 +66,8 @@ check_version(PROJECT_VERSION_MAJOR PROJECT_VERSION_MINOR PROJECT_VERSION_PATCH)
 set(VERSION "${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}.${PROJECT_VERSION_PATCH}")
 if(OSX_FRAMEWORK)
     set(FRAMEWORK_VERSION "${PROJECT_VERSION_MAJOR}")
+
+    set(INSTALL_MAN_DIR ${INSTALL_LIB_DIR}/${PROJECT_NAME}.framework/Versions/${FRAMEWORK_VERSION}/Resources/man CACHE INTERNAL "Man files directory" FORCE)
 endif()
 
 set(API_VERSION ${PROJECT_VERSION_MINOR})
@@ -65,32 +76,60 @@ report_version(${PROJECT_NAME} "${VERSION}")
 include(configure)
 configure_file(${CMAKE_SOURCE_DIR}/cmake/cmake_uninstall.cmake.in ${CMAKE_CURRENT_BINARY_DIR}/cmake_uninstall.cmake IMMEDIATE @ONLY)
 
+set(LIB_NAME ${PROJECT_NAME})
+
+set(PACKAGE_NAME ${PROJECT_NAME})
+string(TOUPPER ${PACKAGE_NAME} PACKAGE_UPPER_NAME)
+
+if(BUILD_TESTING)
+    set(BUILD_APPS ON)
+endif()
+
 add_subdirectory(nad)
-set(LIB_NAME proj)
 add_subdirectory(src)
-if(NOT SKIP_BUILD_DOCS)
-    add_subdirectory(man)
-endif()
+add_subdirectory(man)
 
-export(TARGETS ${LIB_NAME} FILE ${LIB_NAME}-exports.cmake)
-
-if (REGISTER_PACKAGE)
-
-    set(EXPORT_PACKAGE_NAME PROJ4)
-    string(TOUPPER ${EXPORT_PACKAGE_NAME} EXPORT_PACKAGE_NAME_UPPER)
-    set(EXPORT_PACKAGE_LIB_NAME ${LIB_NAME})
-
-    export(PACKAGE ${EXPORT_PACKAGE_NAME})
-
-    include(CMakePackageConfigHelpers)
-    configure_package_config_file(
-        ${CMAKE_SOURCE_DIR}/cmake/PackageConfig.cmake.in
-        ${CMAKE_CURRENT_BINARY_DIR}/${EXPORT_PACKAGE_NAME}Config.cmake
-    INSTALL_DESTINATION ${CMAKE_CURRENT_BINARY_DIR} )
-    write_basic_package_version_file(
-        ${CMAKE_CURRENT_BINARY_DIR}/${EXPORT_PACKAGE_NAME}ConfigVersion.cmake
-        VERSION ${VERSION}
-        COMPATIBILITY AnyNewerVersion )
-endif()
+enable_testing()
+add_subdirectory(test)
 
 add_custom_target(uninstall COMMAND ${CMAKE_COMMAND} -P ${CMAKE_CURRENT_BINARY_DIR}/cmake_uninstall.cmake)
+
+# Export package ===============================================================
+
+if(REGISTER_PACKAGE)
+    # Export the package for use from the build-tree
+    # (this registers the build-tree with a global CMake-registry)
+    export(PACKAGE ${PACKAGE_UPPER_NAME})
+endif()
+
+# Create the <Package>Config.cmake file
+configure_file(cmake/PackageConfig.cmake.in
+    ${PROJECT_BINARY_DIR}/${PACKAGE_UPPER_NAME}Config.cmake @ONLY)
+
+if(NOT SKIP_INSTALL_LIBRARIES AND NOT SKIP_INSTALL_ALL)
+    # Install the <Package>Config.cmake
+    install(FILES
+      ${PROJECT_BINARY_DIR}/${PACKAGE_UPPER_NAME}Config.cmake
+      DESTINATION ${INSTALL_CMAKECONF_DIR} COMPONENT dev)
+
+    # Install the export set for use with the install-tree
+    install(EXPORT ${PACKAGE_UPPER_NAME}Targets DESTINATION ${INSTALL_CMAKECONF_DIR} COMPONENT dev)
+endif()
+
+# Archiving ====================================================================
+
+set(CPACK_PACKAGE_NAME "${PACKAGE_NAME}")
+set(CPACK_PACKAGE_VENDOR "${PACKAGE_VENDOR}")
+set(CPACK_PACKAGE_VERSION "${VERSION}")
+set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "${PACKAGE_NAME} Installation")
+set(CPACK_PACKAGE_RELOCATABLE TRUE)
+set(CPACK_ARCHIVE_COMPONENT_INSTALL ON)
+set(CPACK_GENERATOR "ZIP")
+set(CPACK_MONOLITHIC_INSTALL ON)
+set(CPACK_STRIP_FILES TRUE)
+
+# Get cpack zip archive name
+get_cpack_filename(${VERSION} PROJECT_CPACK_FILENAME)
+set(CPACK_PACKAGE_FILE_NAME ${PROJECT_CPACK_FILENAME})
+
+include(CPack)

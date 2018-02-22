@@ -39,7 +39,6 @@ set(SRC_LIBPROJ_PJ
     PJ_boggs.c
     PJ_bonne.c
     PJ_calcofi.c
-    PJ_cart.c
     PJ_cass.c
     PJ_cc.c
     PJ_cea.c
@@ -100,7 +99,6 @@ set(SRC_LIBPROJ_PJ
     PJ_omerc.c
     PJ_ortho.c
     PJ_patterson.c
-    PJ_pipeline.c
     PJ_poly.c
     PJ_putp2.c
     PJ_putp3.c
@@ -134,7 +132,7 @@ set(SRC_LIBPROJ_PJ
     proj_etmerc.c
 )
 
-SET(SRC_LIBPROJ_CORE
+set(SRC_LIBPROJ_CORE
     aasincos.c
     adjlon.c
     bch2bps.c
@@ -184,7 +182,6 @@ SET(SRC_LIBPROJ_CORE
     pj_mlfn.c
     pj_msfn.c
     pj_mutex.c
-    pj_obs_api.c
     pj_open_lib.c
     pj_param.c
     pj_phi2.c
@@ -204,14 +201,13 @@ SET(SRC_LIBPROJ_CORE
     vector1.c
     pj_strtod.c
     ${CMAKE_CURRENT_BINARY_DIR}/proj_config.h
- )
+)
 
 set(HEADERS_LIBPROJ
-    proj.h
     projects.h
     proj_api.h
     geodesic.h
-)
+ )
 
 # Group source files for IDE source explorers (e.g. Visual Studio)
 source_group("Header Files" FILES ${HEADERS_LIBPROJ})
@@ -263,6 +259,8 @@ elseif(OSX_FRAMEWORK)
       MACOSX_FRAMEWORK_BUNDLE_VERSION ${VERSION}
       MACOSX_FRAMEWORK_IDENTIFIER org.libproj.libproj
       XCODE_ATTRIBUTE_INSTALL_PATH "@rpath"
+      VERSION ${VERSION}
+      SOVERSION ${API_VERSION}
       PUBLIC_HEADER "${ALL_LIBPROJ_HEADERS}")
 else()
     if(CMAKE_COMPILER_IS_GNUCC OR CMAKE_COMPILER_IS_GNUCXX)
@@ -272,46 +270,99 @@ else()
     add_library(${LIB_NAME} STATIC ${ALL_LIBPROJ_SOURCES} ${ALL_LIBPROJ_HEADERS} ${PROJ_RESOURCES})
 endif()
 
-if(OSX_FRAMEWORK)
-    set_target_properties(${LIB_NAME} PROPERTIES VERSION "${VERSION}"
-        SOVERSION "${API_VERSION}"
-        CLEAN_DIRECT_OUTPUT 1)
-else()
-    if(WIN32)
-      set_target_properties(${LIB_NAME}
-        PROPERTIES
-        VERSION "${VERSION}"
-        CLEAN_DIRECT_OUTPUT 1)
-    else()
-      set_target_properties(${LIB_NAME}
-        PROPERTIES
-        VERSION "${VERSION}"
-        SOVERSION "${API_VERSION}"
-        CLEAN_DIRECT_OUTPUT 1)
-
-        if(HAVE_LIBM)
-            target_link_libraries(${LIB_NAME} m)
-        endif()
-    endif()
+if(HAVE_LIBM)
+    target_link_libraries(${LIB_NAME} m)
 endif()
 
-set_target_properties(${LIB_NAME}
-    PROPERTIES
-    LINKER_LANGUAGE C)
+if(BUILD_APPS)
+    set(CS2CS_SRC cs2cs.c
+                  gen_cheb.c
+                  p_series.c)
+
+    source_group("Source Files\\Bin" FILES ${CS2CS_SRC})
+
+    if(WIN32)
+        set(CS2CS_SRC ${CS2CS_SRC} emess.c)
+    endif(WIN32)
+
+    add_executable(cs2cs ${CS2CS_SRC} ${CS2CS_INCLUDE})
+    target_link_libraries(cs2cs ${LIB_NAME})
+    install(TARGETS cs2cs
+            RUNTIME DESTINATION ${INSTALL_BIN_DIR})
+
+    set(PROJ_SRC proj.c
+                 gen_cheb.c
+                 p_series.c)
+
+    source_group("Source Files\\Bin" FILES ${PROJ_SRC})
+
+    if(WIN32)
+        set(PROJ_SRC ${PROJ_SRC} emess.c)
+    endif(WIN32)
+
+    #Executable
+    add_executable(binproj ${PROJ_SRC})
+    set_target_properties(binproj
+        PROPERTIES
+        OUTPUT_NAME proj)
+    target_link_libraries(binproj ${LIB_NAME})
+    install(TARGETS binproj
+            RUNTIME DESTINATION ${INSTALL_BIN_DIR})
+
+    set(GEOD_SRC geod.c
+                 geod_set.c geod_interface.c )
+    set(GEOD_INCLUDE geod_interface.h)
+
+    source_group("Source Files\\Bin" FILES ${GEOD_SRC} ${GEOD_INCLUDE})
+
+    if(WIN32)
+        set(GEOD_SRC ${GEOD_SRC} emess.c)
+    endif(WIN32)
+
+    #Executable
+    add_executable(geod ${GEOD_SRC} ${GEOD_INCLUDE})
+    target_link_libraries(geod ${LIB_NAME})
+    install(TARGETS geod
+            RUNTIME DESTINATION ${INSTALL_BIN_DIR})
+
+    set(NAD2BIN_SRC nad2bin.c)
+    source_group("Source Files\\Bin" FILES ${NAD2BIN_SRC})
+    if(WIN32)
+        set(NAD2BIN_SRC ${NAD2BIN_SRC} emess.c)
+    endif(WIN32)
+
+    #Executable
+    add_executable(nad2bin ${NAD2BIN_SRC})
+    target_link_libraries(nad2bin ${LIB_NAME})
+    install(TARGETS nad2bin
+            RUNTIME DESTINATION ${INSTALL_BIN_DIR})
+endif()
 
 ##############################################
 # install
 ##############################################
 if(NOT SKIP_INSTALL_LIBRARIES AND NOT SKIP_INSTALL_ALL )
     install(TARGETS ${LIB_NAME}
-        EXPORT targets
-        RUNTIME DESTINATION "${INSTALL_BIN_DIR}"
-        ARCHIVE DESTINATION "${INSTALL_LIB_DIR}"
-        LIBRARY DESTINATION "${INSTALL_LIB_DIR}"
-        FRAMEWORK DESTINATION "${INSTALL_LIB_DIR}")
+        EXPORT ${PACKAGE_UPPER_NAME}Targets
+        RUNTIME DESTINATION ${INSTALL_BIN_DIR}
+        LIBRARY DESTINATION ${INSTALL_LIB_DIR}
+        ARCHIVE DESTINATION ${INSTALL_LIB_DIR}
+        INCLUDES DESTINATION ${INSTALL_INC_DIR}
+        FRAMEWORK DESTINATION ${INSTALL_LIB_DIR}
+    )
 endif()
 
 
 if(NOT SKIP_INSTALL_HEADERS AND NOT SKIP_INSTALL_ALL )
   install(FILES ${ALL_LIBPROJ_HEADERS} DESTINATION ${INSTALL_INC_DIR})
 endif()
+
+# Add path to includes to build-tree export
+target_include_directories(${LIB_NAME} INTERFACE
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>/src
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>/src
+)
+
+# Add all targets to the build-tree export set
+export(TARGETS ${LIB_NAME}
+    FILE ${PROJECT_BINARY_DIR}/${PACKAGE_UPPER_NAME}Targets.cmake)

@@ -1,9 +1,10 @@
 ################################################################################
-# Project:  Lib Proj
+# Project:  proj4
 # Purpose:  CMake build scripts
-# Author:   Dmitry Baryshnikov, dmitry.baryshnikov@nexgis.com
+# Author:   Dmitry Baryshnikov, dmitry.baryshnikov@nextgis.com
 ################################################################################
-# Copyright (C) 2016, NextGIS <info@nextgis.com>
+# Copyright (C) 2018, NextGIS <info@nextgis.com>
+# Copyright (C) 2018 Dmitry Baryshnikov
 #
 # Permission is hereby granted, free of charge, to any person obtaining a
 # copy of this software and associated documentation files (the "Software"),
@@ -24,8 +25,23 @@
 # DEALINGS IN THE SOFTWARE.
 ################################################################################
 
-install (FILES man1/proj.1 man1/cs2cs.1 man1/geod.1
-      DESTINATION ${INSTALL_MAN_DIR}/man1)
+enable_testing()
+if(BUILD_TESTING)
+    set(GEODTEST_SRC ${PROJECT_SOURCE_DIR}/src/geodtest.c)
+    set(GEODTEST_INCLUDE)
 
-install (FILES man3/pj_init.3 man3/geodesic.3
-      DESTINATION ${INSTALL_MAN_DIR}/man3)
+    #Executable
+    add_executable(geodtest ${GEODTEST_SRC} ${GEODTEST_INCLUDE})
+    target_link_libraries(geodtest ${LIB_NAME})
+    # Do not install
+
+    # Instead run as a test
+    add_test(NAME geodesic-test COMMAND geodtest)
+
+    # Find python
+    find_package(PythonInterp)
+    if(PYTHONINTERP_FOUND)
+        add_test(NAME proj-test
+            COMMAND ${PYTHON_EXECUTABLE} ${PROJECT_SOURCE_DIR}/test/gigs/test_json.py -e $<TARGET_FILE:cs2cs> -d cs2cs -t ${CMAKE_CURRENT_SOURCE_DIR}/gigs/*.json)
+    endif()
+endif()
