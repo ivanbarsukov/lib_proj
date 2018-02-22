@@ -7,5 +7,5 @@ m4,m4,skip,
 man/man1,man/man1,,1
 man/man3,man/man3,,3
 nad,nad,,"epsg,esri,world,extra,IGNF,nad27,GL27,nad83,lst,dat,CH,gsb"
-src,src,,"c,h"
+src,src,,"c,h,def"
 test/gigs,test/gigs,,"json,py"
