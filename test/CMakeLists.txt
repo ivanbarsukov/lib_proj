@@ -25,7 +25,6 @@
 # DEALINGS IN THE SOFTWARE.
 ################################################################################
 
-enable_testing()
 if(BUILD_TESTING)
     set(GEODTEST_SRC ${PROJECT_SOURCE_DIR}/src/geodtest.c)
     set(GEODTEST_INCLUDE)

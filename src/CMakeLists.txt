@@ -271,7 +271,7 @@ else()
 endif()
 
 if(HAVE_LIBM)
-    target_link_libraries(${LIB_NAME} m)
+    target_link_libraries(${LIB_NAME} PRIVATE m)
 endif()
 
 if(BUILD_APPS)
@@ -358,9 +358,9 @@ if(NOT SKIP_INSTALL_HEADERS AND NOT SKIP_INSTALL_ALL )
 endif()
 
 # Add path to includes to build-tree export
-target_include_directories(${LIB_NAME} INTERFACE
-  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>/src
-  $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>/src
+target_include_directories(${LIB_NAME} PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/src>
 )
 
 # Add all targets to the build-tree export set
