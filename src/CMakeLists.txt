@@ -274,6 +274,10 @@ if(HAVE_LIBM)
     target_link_libraries(${LIB_NAME} PRIVATE m)
 endif()
 
+set_target_properties(${LIB_NAME}
+    PROPERTIES
+    LINKER_LANGUAGE C)
+
 if(BUILD_APPS)
     set(CS2CS_SRC cs2cs.c
                   gen_cheb.c
