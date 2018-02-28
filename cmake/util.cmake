@@ -26,7 +26,7 @@
 
 function(check_version major minor patch)
 
-    set(VERSION_FILE_PATH "${CMAKE_SOURCE_DIR}/src/proj_api.h")
+    set(VERSION_FILE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/src/proj_api.h")
     # Read version information from configure.ac.
     file(READ "${VERSION_FILE_PATH}" PROJ_API_H_CONTENTS)
     string(REGEX MATCH "PJ_VERSION[ \t]+([0-9]+)"
