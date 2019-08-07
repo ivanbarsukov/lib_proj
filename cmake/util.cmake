@@ -3,7 +3,7 @@
 # Purpose:  CMake build scripts
 # Author:   Dmitry Baryshnikov, dmitry.baryshnikov@nexgis.com
 ################################################################################
-# Copyright (C) 2015-2018, NextGIS <info@nextgis.com>
+# Copyright (C) 2015-2019, NextGIS <info@nextgis.com>
 #
 # Permission is hereby granted, free of charge, to any person obtaining a
 # copy of this software and associated documentation files (the "Software"),
@@ -26,27 +26,30 @@
 
 function(check_version major minor patch)
 
-    set(VERSION_FILE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/src/proj_api.h")
+    set(VERSION_FILE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/src/proj.h")
     # Read version information from configure.ac.
-    file(READ "${VERSION_FILE_PATH}" PROJ_API_H_CONTENTS)
-    string(REGEX MATCH "PJ_VERSION[ \t]+([0-9]+)"
-      PJ_VERSION ${PROJ_API_H_CONTENTS})
+    file(READ "${VERSION_FILE_PATH}" PROJ_H_CONTENTS)
+
+   string(REGEX MATCH "PROJ_VERSION_MAJOR[ \t]+([0-9]+)"
+      PROJ_VERSION_MAJOR ${PROJ_H_CONTENTS})
     string (REGEX MATCH "([0-9]+)"
-      PJ_VERSION ${PJ_VERSION})
+      PROJ_VERSION_MAJOR ${PROJ_VERSION_MAJOR})
+    string(REGEX MATCH "PROJ_VERSION_MINOR[ \t]+([0-9]+)"
+      PROJ_VERSION_MINOR ${PROJ_H_CONTENTS})
+    string (REGEX MATCH "([0-9]+)"
+      PROJ_VERSION_MINOR ${PROJ_VERSION_MINOR})
+    string(REGEX MATCH "PROJ_VERSION_PATCH[ \t]+([0-9]+)"
+      PROJ_VERSION_PATCH ${PROJ_H_CONTENTS})
+    string (REGEX MATCH "([0-9]+)"
+      PROJ_VERSION_PATCH ${PROJ_VERSION_PATCH})
 
-    string(SUBSTRING ${PJ_VERSION} 0 1 PROJ4_MAJOR_VERSION)
-    string(SUBSTRING ${PJ_VERSION} 1 1 PROJ4_MINOR_VERSION)
-    string(SUBSTRING ${PJ_VERSION} 2 1 PROJ4_PATCH_VERSION)
-
-
-    set(${major} ${PROJ4_MAJOR_VERSION} PARENT_SCOPE)
-    set(${minor} ${PROJ4_MINOR_VERSION} PARENT_SCOPE)
-    set(${patch} ${PROJ4_PATCH_VERSION} PARENT_SCOPE)
-
+    set(${major} ${PROJ_VERSION_MAJOR} PARENT_SCOPE)
+    set(${minor} ${PROJ_VERSION_MINOR} PARENT_SCOPE)
+    set(${patch} ${PROJ_VERSION_PATCH} PARENT_SCOPE)
 
     # Store version string in file for installer needs
-    file(TIMESTAMP "${VERSION_FILE_PATH}" VERSION_DATETIME "%Y-%m-%d %H:%M:%S" UTC)
-    set(VERSION ${PROJ4_MAJOR_VERSION}.${PROJ4_MINOR_VERSION}.${PROJ4_PATCH_VERSION})
+    file(TIMESTAMP ${VERSION_FILE} VERSION_DATETIME "%Y-%m-%d %H:%M:%S" UTC)
+    set(VERSION ${PROJ_VERSION_MAJOR}.${PROJ_VERSION_MINOR}.${PROJ_VERSION_PATCH})
     get_cpack_filename(${VERSION} PROJECT_CPACK_FILENAME)
     file(WRITE ${CMAKE_BINARY_DIR}/version.str "${VERSION}\n${VERSION_DATETIME}\n${PROJECT_CPACK_FILENAME}")
 
@@ -62,13 +65,59 @@ function(report_version name ver)
 
 endfunction()
 
+# macro to find packages on the host OS
+macro( find_exthost_package )
+    if(CMAKE_CROSSCOMPILING)
+        set( CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER )
+        set( CMAKE_FIND_ROOT_PATH_MODE_LIBRARY NEVER )
+        set( CMAKE_FIND_ROOT_PATH_MODE_INCLUDE NEVER )
+
+        find_package( ${ARGN} )
+
+        set( CMAKE_FIND_ROOT_PATH_MODE_PROGRAM ONLY )
+        set( CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY )
+        set( CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY )
+    else()
+        find_package( ${ARGN} )
+    endif()
+endmacro()
+
+
+# macro to find programs on the host OS
+macro( find_exthost_program )
+    if(CMAKE_CROSSCOMPILING)
+        set( CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER )
+        set( CMAKE_FIND_ROOT_PATH_MODE_LIBRARY NEVER )
+        set( CMAKE_FIND_ROOT_PATH_MODE_INCLUDE NEVER )
+
+        find_program( ${ARGN} )
+
+        set( CMAKE_FIND_ROOT_PATH_MODE_PROGRAM ONLY )
+        set( CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY )
+        set( CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY )
+    else()
+        find_program( ${ARGN} )
+    endif()
+endmacro()
+
+function(get_prefix prefix)
+  if(BUILD_STATIC_LIBS)
+  set(STATIC_PREFIX "static-")
+    if(ANDROID)
+      set(STATIC_PREFIX "${STATIC_PREFIX}android-${ANDROID_ABI}-")
+    elseif(IOS)
+      set(STATIC_PREFIX "${STATIC_PREFIX}${IOS_PLATFORM}${IOS_ARCH}-${ANDROID_ABI}-")
+    endif()
+  endif()
+  set(${prefix} ${STATIC_PREFIX} PARENT_SCOPE)
+endfunction()
+
+
 function(get_cpack_filename ver name)
     get_compiler_version(COMPILER)
-    if(BUILD_STATIC_LIBS)
-        set(STATIC_PREFIX "static-")
-    endif()
+    get_prefix(STATIC_PREFIX)
 
-    set(${name} ${PROJECT_NAME}-${STATIC_PREFIX}${ver}-${COMPILER} PARENT_SCOPE)
+    set(${name} ${PROJECT_NAME}-${ver}-${STATIC_PREFIX}${COMPILER} PARENT_SCOPE)
 endfunction()
 
 function(get_compiler_version ver)

@@ -1,401 +1,65 @@
-###############################################################################
-#
-# CMake configuration file
-#
-# Author: Mateusz Loskot <mateusz@loskot.net>
-# Author: Dmitry Baryshnikov <polimax@mail.ru>
-#
-###############################################################################
+# first include proj library
+# always need
+include(lib_proj.cmake)
 
-option(USE_THREAD "Build libproj with thread/mutex support " ON)
-if(NOT USE_THREAD)
-   add_definitions( -DMUTEX_stub)
-endif(NOT USE_THREAD)
-find_package(Threads QUIET)
-if(USE_THREAD AND Threads_FOUND AND CMAKE_USE_WIN32_THREADS_INIT )
-   add_definitions( -DMUTEX_win32)
-endif(USE_THREAD AND Threads_FOUND AND CMAKE_USE_WIN32_THREADS_INIT )
-if(USE_THREAD AND Threads_FOUND AND CMAKE_USE_PTHREADS_INIT )
-   add_definitions( -DMUTEX_pthread)
-endif(USE_THREAD AND Threads_FOUND AND CMAKE_USE_PTHREADS_INIT )
-if(USE_THREAD AND NOT Threads_FOUND)
-  message(FATAL_ERROR "No thread library found and thread/mutex support is required by USE_THREAD option")
-endif(USE_THREAD AND NOT Threads_FOUND)
+# configure executable build
+option(BUILD_CCT
+  "Build cct (coordinate conversion and transformation tool)" ON)
+option(BUILD_CS2CS
+  "Build cs2cs (coordinate systems to coordinate systems translation tool)" ON)
+option(BUILD_GEOD
+  "Build geod (computation of geodesic lines)" ON)
+option(BUILD_GIE
+  "Build gie (geospatial integrity investigation environment)" ON)
+option(BUILD_PROJ
+  "Build proj (cartographic projection tool)" ON)
+option(BUILD_PROJINFO
+  "Build projinfo (SRS and coordinate operation metadata/query tool)" ON)
 
-include_directories (${CMAKE_CURRENT_BINARY_DIR})
-include_directories (${CMAKE_CURRENT_SOURCE_DIR} )
-include_directories (${CMAKE_CURRENT_BINARY_DIR}/src)
-include_directories (${CMAKE_CURRENT_SOURCE_DIR}/src)
+if(MSVC)
 
-set(SRC_LIBPROJ_PJ
-    nad_init.c
-    PJ_aea.c
-    PJ_aeqd.c
-    PJ_airy.c
-    PJ_aitoff.c
-    PJ_august.c
-    PJ_bacon.c
-    PJ_bipc.c
-    PJ_boggs.c
-    PJ_bonne.c
-    PJ_calcofi.c
-    PJ_cass.c
-    PJ_cc.c
-    PJ_cea.c
-    PJ_chamb.c
-    PJ_collg.c
-    PJ_comill.c
-    PJ_crast.c
-    PJ_denoy.c
-    PJ_eck1.c
-    PJ_eck2.c
-    PJ_eck3.c
-    PJ_eck4.c
-    PJ_eck5.c
-    PJ_eqc.c
-    PJ_eqdc.c
-    PJ_fahey.c
-    PJ_fouc_s.c
-    PJ_gall.c
-    PJ_geos.c
-    PJ_gins8.c
-    PJ_gnom.c
-    PJ_gn_sinu.c
-    PJ_goode.c
-    PJ_gstmerc.c
-    PJ_hammer.c
-    PJ_hatano.c
-    PJ_igh.c
-    PJ_isea.c
-    PJ_imw_p.c
-    PJ_krovak.c
-    PJ_labrd.c
-    PJ_laea.c
-    PJ_lagrng.c
-    PJ_larr.c
-    PJ_lask.c
-    PJ_lcca.c
-    PJ_lcc.c
-    PJ_loxim.c
-    PJ_lsat.c
-    PJ_misrsom.c
-    PJ_mbt_fps.c
-    PJ_mbtfpp.c
-    PJ_mbtfpq.c
-    PJ_merc.c
-    PJ_mill.c
-    PJ_mod_ster.c
-    PJ_moll.c
-    PJ_natearth.c
-    PJ_natearth2.c
-    PJ_nell.c
-    PJ_nell_h.c
-    PJ_nocol.c
-    PJ_nsper.c
-    PJ_nzmg.c
-    PJ_ob_tran.c
-    PJ_ocea.c
-    PJ_oea.c
-    PJ_omerc.c
-    PJ_ortho.c
-    PJ_patterson.c
-    PJ_poly.c
-    PJ_putp2.c
-    PJ_putp3.c
-    PJ_putp4p.c
-    PJ_putp5.c
-    PJ_putp6.c
-    PJ_qsc.c
-    PJ_robin.c
-    PJ_rpoly.c
-    PJ_sch.c
-    PJ_sconics.c
-    PJ_somerc.c
-    PJ_sterea.c
-    PJ_stere.c
-    PJ_sts.c
-    PJ_tcc.c
-    PJ_tcea.c
-    PJ_times.c
-    PJ_tmerc.c
-    PJ_tpeqd.c
-    PJ_urm5.c
-    PJ_urmfps.c
-    PJ_vandg.c
-    PJ_vandg2.c
-    PJ_vandg4.c
-    PJ_wag2.c
-    PJ_wag3.c
-    PJ_wag7.c
-    PJ_wink1.c
-    PJ_wink2.c
-    proj_etmerc.c
-)
+    # Linking to setargv.obj enables wildcard globbing for the
+    # command line utilities, when compiling with MSVC
+    # https://docs.microsoft.com/cpp/c-language/expanding-wildcard-arguments
+    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} setargv.obj")
 
-set(SRC_LIBPROJ_CORE
-    aasincos.c
-    adjlon.c
-    bch2bps.c
-    bchgen.c
-    biveval.c
-    dmstor.c
-    emess.c
-    emess.h
-    geocent.c
-    geocent.h
-    geodesic.c
-    mk_cheby.c
-    nad_cvt.c
-    nad_init.c
-    nad_intr.c
-    pj_apply_gridshift.c
-    pj_apply_vgridshift.c
-    pj_auth.c
-    pj_ctx.c
-    pj_fileapi.c
-    pj_datum_set.c
-    pj_datums.c
-    pj_deriv.c
-    pj_ell_set.c
-    pj_ellps.c
-    pj_errno.c
-    pj_factors.c
-    pj_fwd.c
-    pj_fwd3d.c
-    pj_gauss.c
-    pj_gc_reader.c
-    pj_generic_selftest.c
-    pj_geocent.c
-    pj_gridcatalog.c
-    pj_gridinfo.c
-    pj_gridlist.c
-    PJ_healpix.c
-    pj_init.c
-    pj_initcache.c
-    pj_inv.c
-    pj_inv3d.c
-    pj_latlong.c
-    pj_list.c
-    pj_list.h
-    pj_log.c
-    pj_malloc.c
-    pj_mlfn.c
-    pj_msfn.c
-    pj_mutex.c
-    pj_open_lib.c
-    pj_param.c
-    pj_phi2.c
-    pj_pr_list.c
-    pj_qsfn.c
-    pj_release.c
-    pj_run_selftests.c
-    pj_strerrno.c
-    pj_transform.c
-    pj_tsfn.c
-    pj_units.c
-    pj_utils.c
-    pj_zpoly1.c
-    proj_mdist.c
-    proj_rouss.c
-    rtodms.c
-    vector1.c
-    pj_strtod.c
-    ${CMAKE_CURRENT_BINARY_DIR}/proj_config.h
-)
-
-set(HEADERS_LIBPROJ
-    projects.h
-    proj_api.h
-    geodesic.h
- )
-
-# Group source files for IDE source explorers (e.g. Visual Studio)
-source_group("Header Files" FILES ${HEADERS_LIBPROJ})
-source_group("Source Files\\Core" FILES ${SRC_LIBPROJ_CORE})
-source_group("Source Files\\PJ" FILES ${SRC_LIBPROJ_PJ})
-source_group("CMake Files" FILES CMakeLists.txt)
-
-
-# Embed PROJ_LIB data files location
-add_definitions(-DPROJ_LIB="${INSTALL_DATA_DIR}")
-
-#################################################
-## java wrapping with jni
-#################################################
-option(JNI_SUPPORT "Build support of java/jni wrapping for proj library" OFF)
-find_package(JNI QUIET)
-if(JNI_SUPPORT AND NOT JNI_FOUND)
-  message(FATAL_ERROR "jni support is required but jni is not found")
-endif(JNI_SUPPORT AND NOT JNI_FOUND)
-if(JNI_SUPPORT)
-  set(SRC_LIBPROJ_CORE ${SRC_LIBPROJ_CORE}
-                       jniproj.c )
-  set(HEADERS_LIBPROJ ${HEADERS_LIBPROJ}
-                        org_proj4_PJ.h
-                        org_proj4_Projections.h)
-  source_group("Source Files\\JNI" FILES ${SRC_LIBPROJ_JNI})
-  add_definitions(-DJNI_ENABLED)
-  include_directories( ${JNI_INCLUDE_DIRS})
-endif(JNI_SUPPORT)
-
-#################################################
-## targets: libproj and proj_config.h
-#################################################
-set(ALL_LIBPROJ_SOURCES ${SRC_LIBPROJ_PJ} ${SRC_LIBPROJ_CORE})
-set(ALL_LIBPROJ_HEADERS ${HEADERS_LIBPROJ} )
-
-if(BUILD_SHARED_LIBS)
-    if(WIN32)
-        set(ALL_LIBPROJ_SOURCES ${ALL_LIBPROJ_SOURCES} proj.def )
-    endif()
-
-    add_library(${LIB_NAME} SHARED ${ALL_LIBPROJ_SOURCES} ${ALL_LIBPROJ_HEADERS} ${PROJ_RESOURCES})
-    set_target_properties(${LIB_NAME} PROPERTIES
-      VERSION ${VERSION}
-      SOVERSION ${API_VERSION})
-elseif(OSX_FRAMEWORK)
-    add_library(${LIB_NAME} SHARED ${ALL_LIBPROJ_SOURCES} ${ALL_LIBPROJ_HEADERS} ${PROJ_RESOURCES})
-    set_target_properties(${LIB_NAME} PROPERTIES
-      FRAMEWORK TRUE
-      FRAMEWORK_VERSION ${FRAMEWORK_VERSION}
-      MACOSX_FRAMEWORK_SHORT_VERSION_STRING ${VERSION}
-      MACOSX_FRAMEWORK_BUNDLE_VERSION ${VERSION}
-      MACOSX_FRAMEWORK_IDENTIFIER org.libproj.libproj
-      XCODE_ATTRIBUTE_INSTALL_PATH "@rpath"
-      VERSION ${VERSION}
-      SOVERSION ${FRAMEWORK_VERSION}
-      PUBLIC_HEADER "${ALL_LIBPROJ_HEADERS}")
-else()
-    if(CMAKE_COMPILER_IS_GNUCC OR CMAKE_COMPILER_IS_GNUCXX)
-        set( CMAKE_CXX_FLAGS "-fpic ${CMAKE_CXX_FLAGS}" )
-        set( CMAKE_C_FLAGS   "-fpic ${CMAKE_C_FLAGS}" )
-    endif()
-    add_library(${LIB_NAME} STATIC ${ALL_LIBPROJ_SOURCES} ${ALL_LIBPROJ_HEADERS} ${PROJ_RESOURCES})
 endif()
 
-if(HAVE_LIBM)
-    target_link_libraries(${LIB_NAME} PRIVATE m)
+if(BUILD_CCT)
+  include(bin_cct.cmake)
+  set(BIN_TARGETS ${BIN_TARGETS} cct)
 endif()
 
-set_target_properties(${LIB_NAME}
-    PROPERTIES
-    LINKER_LANGUAGE C)
-
-if(BUILD_APPS)
-    set(CS2CS_SRC cs2cs.c
-                  gen_cheb.c
-                  p_series.c)
-
-    source_group("Source Files\\Bin" FILES ${CS2CS_SRC})
-
-    if(WIN32)
-        set(CS2CS_SRC ${CS2CS_SRC} emess.c)
-    endif(WIN32)
-
-    add_executable(cs2cs ${CS2CS_SRC} ${CS2CS_INCLUDE})
-    target_link_libraries(cs2cs ${LIB_NAME})
-    if(OSX_FRAMEWORK)
-        set_target_properties(cs2cs PROPERTIES INSTALL_RPATH "@executable_path/../../Library/Frameworks")
-    endif()
-    install(TARGETS cs2cs
-            RUNTIME DESTINATION ${INSTALL_BIN_DIR})
-
-    set(PROJ_SRC proj.c
-                 gen_cheb.c
-                 p_series.c)
-
-    source_group("Source Files\\Bin" FILES ${PROJ_SRC})
-
-    if(WIN32)
-        set(PROJ_SRC ${PROJ_SRC} emess.c)
-    endif(WIN32)
-
-    #Executable
-    add_executable(binproj ${PROJ_SRC})
-    set_target_properties(binproj
-        PROPERTIES
-        OUTPUT_NAME proj)
-    target_link_libraries(binproj ${LIB_NAME})
-    if(OSX_FRAMEWORK)
-        set_target_properties(binproj PROPERTIES INSTALL_RPATH "@executable_path/../../Library/Frameworks")
-    endif()
-    install(TARGETS binproj
-            RUNTIME DESTINATION ${INSTALL_BIN_DIR})
-
-    set(GEOD_SRC geod.c
-                 geod_set.c geod_interface.c )
-    set(GEOD_INCLUDE geod_interface.h)
-
-    source_group("Source Files\\Bin" FILES ${GEOD_SRC} ${GEOD_INCLUDE})
-
-    if(WIN32)
-        set(GEOD_SRC ${GEOD_SRC} emess.c)
-    endif(WIN32)
-
-    #Executable
-    add_executable(geod ${GEOD_SRC} ${GEOD_INCLUDE})
-    target_link_libraries(geod ${LIB_NAME})
-    if(OSX_FRAMEWORK)
-        set_target_properties(geod PROPERTIES INSTALL_RPATH "@executable_path/../../Library/Frameworks")
-    endif()
-    install(TARGETS geod
-            RUNTIME DESTINATION ${INSTALL_BIN_DIR})
-
-    set(NAD2BIN_SRC nad2bin.c)
-    source_group("Source Files\\Bin" FILES ${NAD2BIN_SRC})
-    if(WIN32)
-        set(NAD2BIN_SRC ${NAD2BIN_SRC} emess.c)
-    endif(WIN32)
-
-    #Executable
-    add_executable(nad2bin ${NAD2BIN_SRC})
-    target_link_libraries(nad2bin ${LIB_NAME})
-    if(OSX_FRAMEWORK)
-        set_target_properties(nad2bin PROPERTIES INSTALL_RPATH "@executable_path/../../Library/Frameworks")
-    endif()
-    install(TARGETS nad2bin
-            RUNTIME DESTINATION ${INSTALL_BIN_DIR})
+if(BUILD_CS2CS)
+  include(bin_cs2cs.cmake)
+  set(BIN_TARGETS ${BIN_TARGETS} cs2cs)
 endif()
 
-##############################################
-# install
-##############################################
-if(NOT SKIP_INSTALL_LIBRARIES AND NOT SKIP_INSTALL_ALL )
-    install(TARGETS ${LIB_NAME}
-        EXPORT ${PACKAGE_UPPER_NAME}Targets
-        RUNTIME DESTINATION ${INSTALL_BIN_DIR}
-        LIBRARY DESTINATION ${INSTALL_LIB_DIR}
-        ARCHIVE DESTINATION ${INSTALL_LIB_DIR}
-        INCLUDES DESTINATION ${INSTALL_INC_DIR}
-        FRAMEWORK DESTINATION ${INSTALL_LIB_DIR}
-    )
+if(BUILD_GEOD)
+  include(bin_geod.cmake)
+  include(bin_geodtest.cmake)
+  set(BIN_TARGETS ${BIN_TARGETS} geod)
 endif()
 
-
-if(NOT SKIP_INSTALL_HEADERS AND NOT SKIP_INSTALL_ALL )
-  install(FILES ${ALL_LIBPROJ_HEADERS} DESTINATION ${INSTALL_INC_DIR})
+if(BUILD_PROJ)
+  include(bin_proj.cmake)
+  set(BIN_TARGETS ${BIN_TARGETS} binproj)
 endif()
 
-# Add path to includes to build-tree export
-target_include_directories(${LIB_NAME} PUBLIC
-  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
-  $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>
-)
+if(BUILD_PROJINFO)
+  include(bin_projinfo.cmake)
+  set(BIN_TARGETS ${BIN_TARGETS} binprojinfo)
+endif()
 
-# Add all targets to the build-tree export set
-export(TARGETS ${LIB_NAME}
-    FILE ${PROJECT_BINARY_DIR}/${PACKAGE_UPPER_NAME}Targets.cmake)
+if(BUILD_GIE)
+  include(bin_gie.cmake)
+  set(BIN_TARGETS ${BIN_TARGETS} gie)
+endif()
 
-# Create the <Package>Config.cmake file
-configure_file(${PROJECT_SOURCE_DIR}/cmake/PackageConfig.cmake.in
-    ${PROJECT_BINARY_DIR}/${PACKAGE_UPPER_NAME}Config.cmake @ONLY)
-
-if(NOT SKIP_INSTALL_LIBRARIES AND NOT SKIP_INSTALL_ALL)
-    # Install the <Package>Config.cmake
-    install(FILES
-      ${PROJECT_BINARY_DIR}/${PACKAGE_UPPER_NAME}Config.cmake
-      DESTINATION ${INSTALL_CMAKECONF_DIR} COMPONENT dev)
-
-    # Install the export set for use with the install-tree
-    install(EXPORT ${PACKAGE_UPPER_NAME}Targets DESTINATION ${INSTALL_CMAKECONF_DIR} COMPONENT dev)
+if(MSVC OR CMAKE_CONFIGURATION_TYPES)
+  if(BIN_TARGETS)
+    # Add _d suffix for your debug versions of the tools
+    set_target_properties(${BIN_TARGETS} PROPERTIES
+      DEBUG_POSTFIX ${CMAKE_DEBUG_POSTFIX})
+  endif()
 endif()
