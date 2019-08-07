@@ -97,3 +97,12 @@ target_link_libraries(gie_self_tests
   ${PROJ_LIBRARIES})
 add_test(NAME gie_self_tests COMMAND gie_self_tests)
 set_property(TEST gie_self_tests PROPERTY ENVIRONMENT ${PENV})
+
+# Copy dependencies to bin dir
+if(WIN32)
+    add_custom_command(TARGET proj_pj_transform_test
+        POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -DDST_PATH="$<TARGET_FILE_DIR:proj_pj_transform_test>" -DSRC_PATH="${PROJECT_BINARY_DIR}" -P ${PROJECT_SOURCE_DIR}/cmake/test_dependency.cmake
+        COMMENT "Copy DLLs"
+    )
+endif()

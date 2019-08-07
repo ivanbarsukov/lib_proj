@@ -1,7 +1,7 @@
 set(GIE_BIN "gie")
 
 if(WIN32)
-  set(PENV "PROJ_LIB=${CMAKE_BINARY_DIR}/data;${CMAKE_SOURCE_DIR}/data")
+  set(PENV "PROJ_LIB=${CMAKE_SOURCE_DIR}/data")
 else()
   set(PENV "PROJ_LIB=${CMAKE_BINARY_DIR}/data:${CMAKE_SOURCE_DIR}/data")
 endif()

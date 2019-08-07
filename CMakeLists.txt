@@ -62,6 +62,9 @@ else()
     set(INSTALL_CMAKECONF_DIR ${CMAKE_INSTALL_DATADIR}/${PROJECT_NAME}/CMake CACHE INTERNAL "Installation directory for cmake config files" FORCE)
 endif()
 
+if(NOT BUILD_STATIC_LIBS)
+    set(BUILD_LIBPROJ_SHARED ON)
+endif()
 
 # Set C++ version
 # Make CMAKE_CXX_STANDARD available as cache option overridable by user
