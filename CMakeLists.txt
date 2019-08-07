@@ -243,6 +243,7 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR}/bin)
 link_directories(${CMAKE_LIBRARY_OUTPUT_DIRECTORY})
 
 string(TOUPPER ${PACKAGE_NAME} PACKAGE_UPPER_NAME)
+cmake_policy(SET CMP0054 NEW)
 cmake_policy(SET CMP0063 NEW)
 ################################################################################
 # Build configured components
