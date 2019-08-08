@@ -128,7 +128,7 @@ set(PROJ_CXX_WARN_FLAGS "${PROJ_CXX_WARN_FLAGS}"
   CACHE STRING "C++ flags used to compile PROJ targets")
 
 
-set(PACKAGE_NAME proj)
+set(PACKAGE_NAME ${PROJECT_NAME})
 include(util)
 
 # Version information

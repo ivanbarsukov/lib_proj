@@ -44,7 +44,7 @@ check_library_exists(m ceil "" HAVE_LIBM)
 
 set(PACKAGE "proj")
 set(PACKAGE_BUGREPORT "warmerdam@pobox.com")
-set(PACKAGE_NAME "PROJ.4 Projections")
+# set(PACKAGE_NAME "PROJ.4 Projections")
 set(PACKAGE_STRING "${PACKAGE_NAME} ${VERSION}")
 set(PACKAGE_TARNAME "${PACKAGE}")
 set(PACKAGE_VERSION "${VERSION}")
