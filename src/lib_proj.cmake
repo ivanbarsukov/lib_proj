@@ -367,13 +367,20 @@ set(ALL_LIBPROJ_HEADERS ${HEADERS_LIBPROJ})
 set(PROJ_CORE_TARGET ${PROJECT_NAME})
 # proj_target_output_name(${PROJ_CORE_TARGET} PROJ_CORE_TARGET_OUTPUT_NAME)
 if(WIN32)
-set(PROJ_CORE_TARGET_OUTPUT_NAME ${PROJECT_NAME}_${API_VERSION})
+  set(PROJ_CORE_TARGET_OUTPUT_NAME ${PROJECT_NAME}_${API_VERSION})
 else()
-set(PROJ_CORE_TARGET_OUTPUT_NAME ${PROJECT_NAME})
+  set(PROJ_CORE_TARGET_OUTPUT_NAME ${PROJECT_NAME})
+endif()
+
+if(BUILD_SHARED_LIBS OR OSX_FRAMEWORK)
+  set(LIB_TYPE SHARED)
+else()
+  set(LIB_TYPE STATIC)
 endif()
 
 add_library(
   ${PROJ_CORE_TARGET}
+  ${LIB_TYPE}
   ${PROJ_LIBRARY_TYPE}
   ${ALL_LIBPROJ_SOURCES}
   ${ALL_LIBPROJ_HEADERS}
@@ -461,20 +468,24 @@ set(PROJ_LIBRARIES ${PROJ_LIBRARIES} PARENT_SCOPE)
 if(UNIX)
   find_library(M_LIB m)
   if(M_LIB)
-    target_link_libraries(${PROJ_CORE_TARGET} -lm)
+    set(TARGET_LINK_LIB ${TARGET_LINK_LIB} m)
+    # target_link_libraries(${PROJ_CORE_TARGET} -lm)
   endif()
 endif()
 if(USE_THREAD AND Threads_FOUND AND CMAKE_USE_PTHREADS_INIT)
-  target_link_libraries(${PROJ_CORE_TARGET} ${CMAKE_THREAD_LIBS_INIT})
+  set(TARGET_LINK_LIB ${TARGET_LINK_LIB} ${CMAKE_THREAD_LIBS_INIT})
+  # target_link_libraries(${PROJ_CORE_TARGET} ${CMAKE_THREAD_LIBS_INIT})
 endif()
 
-include_directories(${SQLITE3_INCLUDE_DIR})
-target_link_libraries(${PROJ_CORE_TARGET} ${SQLITE3_LIBRARY})
+# include_directories(${SQLITE3_INCLUDE_DIR})
+# target_link_libraries(${PROJ_CORE_TARGET} ${SQLITE3_LIBRARY})
 
 if(MSVC)
   target_compile_definitions(${PROJ_CORE_TARGET}
     PRIVATE PROJ_MSVC_DLL_EXPORT=1)
 endif()
+
+target_link_extlibraries(${PROJ_CORE_TARGET})
 
 ##############################################
 # install
