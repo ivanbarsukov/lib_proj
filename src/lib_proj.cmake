@@ -294,6 +294,7 @@ set(HEADERS_LIBPROJ
   proj_experimental.h
   proj_constants.h
   geodesic.h
+  proj_symbol_rename.h
 )
 
 # Group source files for IDE source explorers (e.g. Visual Studio)
