@@ -482,8 +482,8 @@ endif()
 # target_link_libraries(${PROJ_CORE_TARGET} ${SQLITE3_LIBRARY})
 
 if(MSVC)
-  target_compile_definitions(${PROJ_CORE_TARGET}
-    PRIVATE PROJ_MSVC_DLL_EXPORT=1)
+  target_compile_definitions(${PROJ_CORE_TARGET} PRIVATE PROJ_MSVC_DLL_EXPORT=1)
+  target_compile_definitions(${PROJ_CORE_TARGET} INTERFACE PROJ_MSVC_DLL_IMPORT)
 endif()
 
 target_link_extlibraries(${PROJ_CORE_TARGET})
