@@ -492,7 +492,7 @@ target_link_extlibraries(${PROJ_CORE_TARGET})
 # install
 if(OSX_FRAMEWORK)
     execute_process(
-        COMMAND ${CMAKE_COMMAND} -E create_symlink ${PROJ_CORE_TARGET}.framework ${PROJECT_BINARY_DIR}/symlinks/${PROJ_CORE_TARGET}4.framework
+        COMMAND ${CMAKE_COMMAND} -E create_symlink ${PROJ_CORE_TARGET}.framework ${PROJECT_BINARY_DIR}/${PROJ_CORE_TARGET}4.framework
     )
 endif()
 
@@ -510,7 +510,7 @@ if(NOT SKIP_INSTALL_LIBRARIES AND NOT SKIP_INSTALL_ALL )
     )
 
     if(OSX_FRAMEWORK)
-        install(FILES ${PROJECT_BINARY_DIR}/symlinks/${PROJ_CORE_TARGET}4.framework DESTINATION ${INSTALL_LIB_DIR})
+        install(FILES ${PROJECT_BINARY_DIR}/${PROJ_CORE_TARGET}4.framework DESTINATION ${INSTALL_LIB_DIR})
     endif()
 endif()
 
