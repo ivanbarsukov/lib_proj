@@ -489,6 +489,13 @@ endif()
 
 target_link_extlibraries(${PROJ_CORE_TARGET})
 
+# install
+if(OSX_FRAMEWORK)
+    execute_process(
+        COMMAND ${CMAKE_COMMAND} -E create_symlink ${PROJ_CORE_TARGET}.framework ${PROJECT_BINARY_DIR}/symlinks/${PROJ_CORE_TARGET}4.framework
+    )
+endif()
+
 ##############################################
 # install
 ##############################################
@@ -501,6 +508,10 @@ if(NOT SKIP_INSTALL_LIBRARIES AND NOT SKIP_INSTALL_ALL )
         INCLUDES DESTINATION ${INSTALL_INC_DIR}
         FRAMEWORK DESTINATION ${INSTALL_LIB_DIR}
     )
+
+    if(OSX_FRAMEWORK)
+        install(FILES ${PROJECT_BINARY_DIR}/symlinks/${PROJ_CORE_TARGET}4.framework DESTINATION ${INSTALL_LIB_DIR})
+    endif()
 endif()
 
 if(NOT SKIP_INSTALL_HEADERS AND NOT SKIP_INSTALL_ALL )
