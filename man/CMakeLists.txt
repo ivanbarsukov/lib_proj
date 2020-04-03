@@ -3,7 +3,7 @@
 # Purpose:  CMake build scripts
 # Author:   Dmitry Baryshnikov, dmitry.baryshnikov@nexgis.com
 ################################################################################
-# Copyright (C) 2016, NextGIS <info@nextgis.com>
+# Copyright (C) 2016-2020, NextGIS <info@nextgis.com>
 #
 # Permission is hereby granted, free of charge, to any person obtaining a
 # copy of this software and associated documentation files (the "Software"),
@@ -33,7 +33,3 @@ install(FILES
       man1/projinfo.1
       DESTINATION ${INSTALL_MAN_DIR}/man1)
 
-install(FILES 
-      man3/pj_init.3
-      man3/geodesic.3
-      DESTINATION ${INSTALL_MAN_DIR}/man3)

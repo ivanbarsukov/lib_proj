@@ -7,7 +7,7 @@
 # Distributed under the MIT license
 #
 # Modified by Dmitry Baryshnikov <polimax@mail.ru> for NextGIS Borsch build system
-# Copyright (C) 2016,2019 NextGIS, <info@nextgis.com>
+# Copyright (C) 2016-2020 NextGIS, <info@nextgis.com>
 #
 #################################################################################
 # General settings
