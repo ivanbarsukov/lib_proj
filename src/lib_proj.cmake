@@ -19,6 +19,9 @@
 #   set(PROJ_LIBRARY_TYPE STATIC)
 # endif()
 
+if(WIN32)
+  add_definitions(-DNOMINMAX)
+endif()
 
 option(USE_THREAD "Build libproj with thread/mutex support " ON)
 if(NOT USE_THREAD)
