@@ -5,7 +5,7 @@
 ** Copyright (c) 2012   Martin Raspaud
 **
 ** See also (section 4.4.3.2):
-**   http://www.eumetsat.int/en/area4/msg/news/us_doc/cgms_03_26.pdf
+**   https://www.cgms-info.org/documents/pdf_cgms_03.pdf
 **
 ** Permission is hereby granted, free of charge, to any person obtaining
 ** a copy of this software and associated documentation files (the
@@ -34,7 +34,7 @@
 
 #include "proj.h"
 #include "proj_internal.h"
-#include "proj_math.h"
+#include <math.h>
 
 namespace { // anonymous namespace
 struct pj_opaque {
@@ -126,11 +126,11 @@ static PJ_LP geos_s_inverse (PJ_XY xy, PJ *P) {           /* Spheroidal, inverse
     /* Setting three components of vector from satellite to position.*/
     Vx = -1.0;
     if(Q->flip_axis) {
-        Vz = tan (xy.y / (Q->radius_g - 1.0));
-        Vy = tan (xy.x / (Q->radius_g - 1.0)) * sqrt (1.0 + Vz * Vz);
+        Vz = tan (xy.y / Q->radius_g_1);
+        Vy = tan (xy.x / Q->radius_g_1) * sqrt (1.0 + Vz * Vz);
     } else {
-        Vy = tan (xy.x / (Q->radius_g - 1.0));
-        Vz = tan (xy.y / (Q->radius_g - 1.0)) * sqrt (1.0 + Vy * Vy);
+        Vy = tan (xy.x / Q->radius_g_1);
+        Vz = tan (xy.y / Q->radius_g_1) * sqrt (1.0 + Vy * Vy);
     }
 
     /* Calculation of terms in cubic equation and determinant.*/

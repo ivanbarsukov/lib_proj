@@ -75,6 +75,8 @@
 #define EPSG_NAME_METHOD_BONNE "Bonne"
 #define EPSG_CODE_METHOD_BONNE 9827
 
+#define PROJ_WKT2_NAME_METHOD_COMPACT_MILLER "Compact Miller"
+
 #define EPSG_NAME_METHOD_LAMBERT_CYLINDRICAL_EQUAL_AREA_SPHERICAL \
     "Lambert Cylindrical Equal Area (Spherical)"
 #define EPSG_CODE_METHOD_LAMBERT_CYLINDRICAL_EQUAL_AREA_SPHERICAL 9834
@@ -167,11 +169,16 @@
 
 #define PROJ_WKT2_NAME_METHOD_MOLLWEIDE "Mollweide"
 
+#define PROJ_WKT2_NAME_METHOD_NATURAL_EARTH "Natural Earth"
+#define PROJ_WKT2_NAME_METHOD_NATURAL_EARTH_II "Natural Earth II"
+
 #define  EPSG_NAME_METHOD_OBLIQUE_STEREOGRAPHIC "Oblique Stereographic"
 #define EPSG_CODE_METHOD_OBLIQUE_STEREOGRAPHIC 9809
 
 #define EPSG_NAME_METHOD_ORTHOGRAPHIC "Orthographic"
 #define EPSG_CODE_METHOD_ORTHOGRAPHIC 9840
+
+#define PROJ_WKT2_NAME_METHOD_PATTERSON "Patterson"
 
 #define EPSG_NAME_METHOD_AMERICAN_POLYCONIC "American Polyconic"
 #define EPSG_CODE_METHOD_AMERICAN_POLYCONIC 9818
@@ -189,6 +196,8 @@
 #define PROJ_WKT2_NAME_METHOD_SINUSOIDAL "Sinusoidal"
 
 #define PROJ_WKT2_NAME_METHOD_STEREOGRAPHIC "Stereographic"
+
+#define PROJ_WKT2_NAME_METHOD_TIMES "Times"
 
 #define PROJ_WKT2_NAME_METHOD_VAN_DER_GRINTEN "Van Der Grinten"
 
@@ -211,6 +220,11 @@
 
 #define EPSG_NAME_METHOD_LABORDE_OBLIQUE_MERCATOR "Laborde Oblique Mercator"
 #define EPSG_CODE_METHOD_LABORDE_OBLIQUE_MERCATOR 9813
+
+#define EPSG_NAME_METHOD_VERTICAL_PERSPECTIVE "Vertical Perspective"
+#define EPSG_CODE_METHOD_VERTICAL_PERSPECTIVE 9838
+
+#define PROJ_WKT2_NAME_METHOD_POLE_ROTATION_GRIB_CONVENTION "Pole rotation (GRIB convention)"
 
 /* ------------------------------------------------------------------------ */
 
@@ -300,6 +314,18 @@
 
 #define EPSG_NAME_PARAMETER_ELLIPSOID_SCALE_FACTOR "Ellipsoid scaling factor"
 #define EPSG_CODE_PARAMETER_ELLIPSOID_SCALE_FACTOR 1038
+
+#define EPSG_NAME_PARAMETER_LATITUDE_TOPOGRAPHIC_ORIGIN "Latitude of topocentric origin"
+#define EPSG_CODE_PARAMETER_LATITUDE_TOPOGRAPHIC_ORIGIN 8834
+
+#define EPSG_NAME_PARAMETER_LONGITUDE_TOPOGRAPHIC_ORIGIN "Longitude of topocentric origin"
+#define EPSG_CODE_PARAMETER_LONGITUDE_TOPOGRAPHIC_ORIGIN 8835
+
+#define EPSG_NAME_PARAMETER_ELLIPSOIDAL_HEIGHT_TOPOCENTRIC_ORIGIN "Ellipsoidal height of topocentric origin"
+#define EPSG_CODE_PARAMETER_ELLIPSOIDAL_HEIGHT_TOPOCENTRIC_ORIGIN 8836
+
+#define EPSG_NAME_PARAMETER_VIEWPOINT_HEIGHT "Viewpoint height"
+#define EPSG_CODE_PARAMETER_VIEWPOINT_HEIGHT 8840
 
 /* ------------------------------------------------------------------------ */
 
@@ -459,6 +485,15 @@
 #define \
     EPSG_NAME_PARAMETER_FLATTENING_DIFFERENCE "Flattening difference"
 
+#define PROJ_WKT2_NAME_PARAMETER_SOUTH_POLE_LATITUDE_GRIB_CONVENTION \
+    "Latitude of the southern pole (GRIB convention)"
+
+#define PROJ_WKT2_NAME_PARAMETER_SOUTH_POLE_LONGITUDE_GRIB_CONVENTION \
+    "Longitude of the southern pole (GRIB convention)"
+
+#define PROJ_WKT2_NAME_PARAMETER_AXIS_ROTATION_GRIB_CONVENTION \
+    "Axis rotation (GRIB convention)"
+
 /* ------------------------------------------------------------------------ */
 
 #define EPSG_CODE_METHOD_NTV1 9614
@@ -475,6 +510,14 @@
     "Geoid (height correction) model file"
 #define EPSG_CODE_PARAMETER_GEOID_CORRECTION_FILENAME 8666
 
+#define EPSG_NAME_METHOD_GEOCENTRIC_TRANSLATION_BY_GRID_INTERPOLATION_IGN \
+    "Geocentric translation by Grid Interpolation (IGN)"
+#define EPSG_CODE_METHOD_GEOCENTRIC_TRANSLATION_BY_GRID_INTERPOLATION_IGN 1087
+
+#define EPSG_CODE_PARAMETER_GEOCENTRIC_TRANSLATION_FILE 8727
+#define EPSG_NAME_PARAMETER_GEOCENTRIC_TRANSLATION_FILE \
+    "Geocentric translation file"
+
 /* ------------------------------------------------------------------------ */
 
 #define PROJ_WKT2_NAME_METHOD_HEIGHT_TO_GEOG3D \
@@ -482,10 +525,19 @@
 
 #define PROJ_WKT2_NAME_METHOD_CTABLE2 "CTABLE2"
 
+#define PROJ_WKT2_NAME_METHOD_HORIZONTAL_SHIFT_GTIFF "HORIZONTAL_SHIFT_GTIFF"
+
 /* ------------------------------------------------------------------------ */
 
 #define EPSG_CODE_METHOD_VERTCON 9658
-#define EPSG_NAME_METHOD_VERTCON "VERTCON"
+#define EPSG_NAME_METHOD_VERTCON_OLDNAME "VERTCON"
+#define EPSG_NAME_METHOD_VERTCON "Vertical Offset by Grid Interpolation (VERTCON)"
+
+#define EPSG_CODE_METHOD_VERTICALGRID_NZLVD 1071
+#define EPSG_NAME_METHOD_VERTICALGRID_NZLVD "Vertical Offset by Grid Interpolation (NZLVD)"
+
+#define EPSG_CODE_METHOD_VERTICALGRID_GTX 1084
+#define EPSG_NAME_METHOD_VERTICALGRID_GTX "Vertical Offset by Grid Interpolation (gtx)"
 
 #define EPSG_NAME_PARAMETER_VERTICAL_OFFSET_FILE "Vertical offset file"
 #define EPSG_CODE_PARAMETER_VERTICAL_OFFSET_FILE 8732
@@ -576,5 +628,10 @@
 #define EPSG_CODE_METHOD_AXIS_ORDER_REVERSAL_3D 9844
 #define EPSG_NAME_METHOD_AXIS_ORDER_REVERSAL_3D \
     "Axis Order Reversal (Geographic3D horizontal)"
+
+/* ------------------------------------------------------------------------ */
+
+#define EPSG_CODE_METHOD_HEIGHT_DEPTH_REVERSAL 1068
+#define EPSG_NAME_METHOD_HEIGHT_DEPTH_REVERSAL "Height Depth Reversal"
 
 #endif /* PROJ_CONSTANTS_INCLUDED */

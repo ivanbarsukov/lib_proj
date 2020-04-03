@@ -62,10 +62,6 @@ else()
     set(INSTALL_CMAKECONF_DIR ${CMAKE_INSTALL_DATADIR}/${PROJECT_NAME}/CMake CACHE INTERNAL "Installation directory for cmake config files" FORCE)
 endif()
 
-if(NOT BUILD_STATIC_LIBS)
-    set(BUILD_LIBPROJ_SHARED ON)
-endif()
-
 # Set C++ version
 # Make CMAKE_CXX_STANDARD available as cache option overridable by user
 set(CMAKE_CXX_STANDARD 11
@@ -122,6 +118,7 @@ elseif("${CMAKE_C_COMPILER_ID}" STREQUAL "Intel")
     set(PROJ_CXX_WARN_FLAGS -Wall)
   endif()
 endif()
+
 set(PROJ_C_WARN_FLAGS "${PROJ_C_WARN_FLAGS}"
   CACHE STRING "C flags used to compile PROJ targets")
 set(PROJ_CXX_WARN_FLAGS "${PROJ_CXX_WARN_FLAGS}"
@@ -141,8 +138,10 @@ if(OSX_FRAMEWORK)
     set(INSTALL_MAN_DIR ${INSTALL_LIB_DIR}/${PROJECT_NAME}.framework/Versions/${FRAMEWORK_VERSION}/Resources/man CACHE INTERNAL "Man files directory" FORCE)
 endif()
 
-set(PROJ_API_VERSION "1${PROJECT_VERSION_MAJOR}")
-set(PROJ_BUILD_VERSION "1${VERSION}")
+# set(PROJ_API_VERSION "1${PROJECT_VERSION_MAJOR}")
+# set(PROJ_BUILD_VERSION "1${VERSION}")
+set(PROJ_API_VERSION "19")
+set(PROJ_BUILD_VERSION "19.0.0")
 
 set(API_VERSION ${PROJ_API_VERSION})
 report_version(${PROJECT_NAME} "${VERSION}")
@@ -166,6 +165,42 @@ if(NOT SQLITE3_FOUND)
   message(SEND_ERROR "sqlite3 dependency not found!")
 endif()
 
+################################################################################
+# Check for libtiff
+################################################################################
+
+option(ENABLE_TIFF "Enable TIFF support to read some grids" ON)
+mark_as_advanced(ENABLE_TIFF)
+set(TIFF_ENABLED FALSE)
+if(ENABLE_TIFF)
+  find_anyproject(TIFF REQUIRED)
+  if(TIFF_FOUND)
+    set(TIFF_ENABLED TRUE)
+  else()
+    message(SEND_ERROR
+      "libtiff dependency not found! Use ENABLE_TIFF=OFF to force it off")
+  endif()
+else()
+  message(WARNING
+    "TIFF support is not enabled and will result in the inability to read "
+    "some grids")
+endif()
+
+
+################################################################################
+# Check for curl
+################################################################################
+
+option(ENABLE_CURL "Enable Curl support" ON)
+set(CURL_ENABLED FALSE)
+if(ENABLE_CURL)
+  find_anyproject(CURL REQUIRED)
+  if(CURL_FOUND)
+    set(CURL_ENABLED TRUE)
+  else()
+    message(SEND_ERROR "curl dependency not found!")
+  endif()
+endif()
 
 ################################################################################
 # threading configuration
@@ -181,23 +216,6 @@ if(MSVC)
 else()
   set(CMAKE_REQUIRED_LIBRARIES m)
   set(CMAKE_REQUIRED_FLAGS "${CMAKE_C_FLAGS} -Werror -Wall")
-endif()
-# Check whether the C99 math function: hypot, atanh, etc. are available.
-check_c_source_compiles("
-#include <math.h>
-int main() {
-  int q;
-  return (int)(
-    hypot(3.0, 4.0) + atanh(0.8) + cbrt(8.0) +
-    remquo(100.0, 90.0, &q) +
-    remainder(100.0, 90.0) + copysign(1.0, -0.0) +
-    log1p(0.1) + asinh(0.1)) + isnan(0.0);
-}
-" C99_MATH)
-if(C99_MATH)
-  add_definitions(-DHAVE_C99_MATH=1)
-else()
-  add_definitions(-DHAVE_C99_MATH=0)
 endif()
 
 if(Threads_FOUND AND CMAKE_USE_PTHREADS_INIT)
@@ -217,9 +235,6 @@ int main(int argc, char* argv[]) {
   endif()
 endif()
 
-# boost_report_value(PROJ_PLATFORM_NAME)
-# boost_report_value(PROJ_COMPILER_NAME)
-
 # Set a default build type for single-configuration cmake generators if
 # no build type is set.
 if(NOT CMAKE_CONFIGURATION_TYPES AND NOT CMAKE_BUILD_TYPE)
@@ -232,12 +247,15 @@ if(MSVC OR CMAKE_CONFIGURATION_TYPES)
   set(CMAKE_DEBUG_POSTFIX _d)
 endif()
 
-option(PROJ_TESTS "Enable build of collection of PROJ tests" ON)
-# boost_report_value(PROJ_TESTS)
-if(PROJ_TESTS)
-  enable_testing()
+configure_file(${CMAKE_SOURCE_DIR}/cmake/proj.pc.cmakein  ${CMAKE_BINARY_DIR}/proj.pc IMMEDIATE @ONLY)
+################################################################################
+# Tests
+################################################################################
+include(CTest)
+
+if(BUILD_TESTING)
+  include(ProjTest)
 endif()
-include(ProjTest)
 
 # Put the libraries and binaries that get built into directories at the
 # top of the build tree rather than in hard-to-find leaf
@@ -260,7 +278,7 @@ add_subdirectory(data)
 add_subdirectory(src)
 add_subdirectory(man)
 # add_subdirectory(cmake)
-if(PROJ_TESTS)
+if(BUILD_TESTING)
   add_subdirectory(test)
 endif()
 

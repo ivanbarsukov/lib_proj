@@ -139,6 +139,9 @@ CCDEPMODE = @CCDEPMODE@
 CFLAGS = @CFLAGS@
 CPP = @CPP@
 CPPFLAGS = @CPPFLAGS@
+CURL_CFLAGS = @CURL_CFLAGS@
+CURL_ENABLED_FLAGS = @CURL_ENABLED_FLAGS@
+CURL_LIBS = @CURL_LIBS@
 CXX = @CXX@
 CXXCPP = @CXXCPP@
 CXXDEPMODE = @CXXDEPMODE@
@@ -167,9 +170,9 @@ INSTALL_DATA = @INSTALL_DATA@
 INSTALL_PROGRAM = @INSTALL_PROGRAM@
 INSTALL_SCRIPT = @INSTALL_SCRIPT@
 INSTALL_STRIP_PROGRAM = @INSTALL_STRIP_PROGRAM@
-JNI_INCLUDE = @JNI_INCLUDE@
 LD = @LD@
 LDFLAGS = @LDFLAGS@
+LIBCURL_CONFIG = @LIBCURL_CONFIG@
 LIBOBJS = @LIBOBJS@
 LIBS = @LIBS@
 LIBTOOL = @LIBTOOL@
@@ -206,6 +209,9 @@ SQLITE3_CHECK = @SQLITE3_CHECK@
 SQLITE3_LIBS = @SQLITE3_LIBS@
 STRIP = @STRIP@
 THREAD_LIB = @THREAD_LIB@
+TIFF_CFLAGS = @TIFF_CFLAGS@
+TIFF_ENABLED_FLAGS = @TIFF_ENABLED_FLAGS@
+TIFF_LIBS = @TIFF_LIBS@
 VERSION = @VERSION@
 abs_builddir = @abs_builddir@
 abs_srcdir = @abs_srcdir@
@@ -270,7 +276,8 @@ EXTRA_DIST = 4D-API_cs2cs-style.gie \
 	ellipsoid.gie \
 	more_builtins.gie \
 	unitconvert.gie \
-	DHDN_ETRS89.gie
+	DHDN_ETRS89.gie \
+	geotiff_grids.gie
 
 all: all-am
 
@@ -469,36 +476,39 @@ uninstall-am:
 .PRECIOUS: Makefile
 
 
-PROJ_LIB ?= ../../data
+PROJ_LIB ?= ../../data/for_tests
 
 4D-API-cs2cs-style: 4D-API_cs2cs-style.gie
-	PROJ_LIB=$(PROJ_LIB) $(GIEEXE) $<
+	PROJ_SKIP_READ_USER_WRITABLE_DIRECTORY=YES PROJ_LIB=$(PROJ_LIB) $(GIEEXE) $<
 
 GDA: GDA.gie
-	PROJ_LIB=$(PROJ_LIB) $(GIEEXE) $<
+	PROJ_SKIP_READ_USER_WRITABLE_DIRECTORY=YES PROJ_LIB=$(PROJ_LIB) $(GIEEXE) $<
 
 axisswap: axisswap.gie
-	PROJ_LIB=$(PROJ_LIB) $(GIEEXE) $<
+	PROJ_SKIP_READ_USER_WRITABLE_DIRECTORY=YES PROJ_LIB=$(PROJ_LIB) $(GIEEXE) $<
 
 builtins: builtins.gie
-	PROJ_LIB=$(PROJ_LIB) $(GIEEXE) $<
+	PROJ_SKIP_READ_USER_WRITABLE_DIRECTORY=YES PROJ_LIB=$(PROJ_LIB) $(GIEEXE) $<
 
 deformation: deformation.gie
-	PROJ_LIB=$(PROJ_LIB) $(GIEEXE) $<
+	PROJ_SKIP_READ_USER_WRITABLE_DIRECTORY=YES PROJ_LIB=$(PROJ_LIB) $(GIEEXE) $<
 
 ellipsoid: ellipsoid.gie
-	PROJ_LIB=$(PROJ_LIB) $(GIEEXE) $<
+	PROJ_SKIP_READ_USER_WRITABLE_DIRECTORY=YES PROJ_LIB=$(PROJ_LIB) $(GIEEXE) $<
 
 more_builtins: more_builtins.gie
-	PROJ_LIB=$(PROJ_LIB) $(GIEEXE) $<
+	PROJ_SKIP_READ_USER_WRITABLE_DIRECTORY=YES PROJ_LIB=$(PROJ_LIB) $(GIEEXE) $<
 
 unitconvert: unitconvert.gie
-	PROJ_LIB=$(PROJ_LIB) $(GIEEXE) $<
+	PROJ_SKIP_READ_USER_WRITABLE_DIRECTORY=YES PROJ_LIB=$(PROJ_LIB) $(GIEEXE) $<
 
 DHDN_ETRS89: DHDN_ETRS89.gie
-	PROJ_LIB=$(PROJ_LIB) $(GIEEXE) $<
+	PROJ_SKIP_READ_USER_WRITABLE_DIRECTORY=YES PROJ_LIB=$(PROJ_LIB) $(GIEEXE) $<
 
-check-local: 4D-API-cs2cs-style GDA axisswap builtins deformation ellipsoid more_builtins unitconvert DHDN_ETRS89
+geotiff_grids: geotiff_grids.gie
+	PROJ_SKIP_READ_USER_WRITABLE_DIRECTORY=YES PROJ_LIB=$(PROJ_LIB) $(GIEEXE) $<
+
+check-local: 4D-API-cs2cs-style GDA axisswap builtins deformation ellipsoid more_builtins unitconvert DHDN_ETRS89 geotiff_grids
 
 # Tell versions [3.59,3.63) of GNU make to not export all variables.
 # Otherwise a system limit (for SysV at least) may be exceeded.

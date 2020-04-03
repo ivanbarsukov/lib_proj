@@ -1,7 +1,7 @@
 #define PJ_LIB__
 #include "proj.h"
 #include "proj_internal.h"
-#include "proj_math.h"
+#include <math.h>
 
 PROJ_HEAD(robin, "Robinson") "\n\tPCyl, Sph";
 
@@ -84,7 +84,7 @@ static PJ_XY robin_s_forward (PJ_LP lp, PJ *P) {           /* Spheroidal, forwar
     (void) P;
 
     dphi = fabs(lp.phi);
-    i = isnan(lp.phi) ? -1 : lround(floor(dphi * C1));
+    i = isnan(lp.phi) ? -1 : lround(floor(dphi * C1 + 1e-15));
     if( i < 0 ){
         proj_errno_set(P, PJD_ERR_TOLERANCE_CONDITION);
         return xy;

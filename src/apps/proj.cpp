@@ -290,7 +290,8 @@ static void vprocess(FILE *fid) {
 }
 
 int main(int argc, char **argv) {
-    char *arg, *pargv[MAX_PARGS];
+    char *arg;
+    char *pargv[MAX_PARGS] = {};
     char **eargv = argv;
     FILE *fid;
     int pargc = 0, eargc = 0, mon = 0;
@@ -384,17 +385,6 @@ int main(int argc, char **argv) {
                     for (lu = proj_list_units(); lu->id ; ++lu)
                         (void)printf("%12s %-20s %s\n",
                                      lu->id, lu->to_meter, lu->name);
-                } else if (arg[1] == 'd') { /* list datums */
-                    const struct PJ_DATUMS *ld;
-
-                    printf("__datum_id__ __ellipse___ __definition/comments______________________________\n" );
-                    for (ld = pj_get_datums_ref(); ld->id ; ++ld)
-                    {
-                        printf("%12s %-12s %-30s\n",
-                               ld->id, ld->ellipse_id, ld->defn);
-                        if( ld->comments != nullptr && strlen(ld->comments) > 0 )
-                            printf( "%25s %s\n", " ", ld->comments );
-                    }
                 } else
                     emess(1,"invalid list option: l%c",arg[1]);
                 exit(0);
@@ -487,6 +477,14 @@ int main(int argc, char **argv) {
     if (proj_angular_output(Proj, PJ_FWD)) {
         emess(3, "can't initialize operations that produce angular output coordinates");
         exit(0);
+    }
+
+    // Ugly hack. See https://github.com/OSGeo/PROJ/issues/1782
+    if( Proj->right == PJ_IO_UNITS_WHATEVER && Proj->descr &&
+        strncmp(Proj->descr, "General Oblique Transformation",
+                strlen("General Oblique Transformation")) == 0 )
+    {
+        Proj->right = PJ_IO_UNITS_PROJECTED;
     }
 
     if (inverse) {

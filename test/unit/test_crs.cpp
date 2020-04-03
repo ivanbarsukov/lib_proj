@@ -1,7 +1,7 @@
 /******************************************************************************
  *
  * Project:  PROJ
- * Purpose:  Test ISO19111:2018 implementation
+ * Purpose:  Test ISO19111:2019 implementation
  * Author:   Even Rouault <even dot rouault at spatialys dot com>
  *
  ******************************************************************************
@@ -57,7 +57,8 @@ namespace {
 struct UnrelatedObject : public IComparable {
     UnrelatedObject() = default;
 
-    bool _isEquivalentTo(const IComparable *, Criterion) const override {
+    bool _isEquivalentTo(const IComparable *, Criterion,
+                         const DatabaseContextPtr &) const override {
         assert(false);
         return false;
     }
@@ -157,7 +158,7 @@ TEST(crs, GeographicCRS_datum_ensemble) {
             nullptr, ensemble_vdatum,
             EllipsoidalCS::createLatitudeLongitude(UnitOfMeasure::DEGREE));
         WKTFormatterNNPtr f(
-            WKTFormatter::create(WKTFormatter::Convention::WKT2_2018));
+            WKTFormatter::create(WKTFormatter::Convention::WKT2_2019));
         crs->exportToWKT(f.get());
         auto expected =
             "GEOGCRS[\"unnamed\",\n"
@@ -187,7 +188,7 @@ TEST(crs, GeographicCRS_datum_ensemble) {
             ensemble_vdatum,
             EllipsoidalCS::createLatitudeLongitude(UnitOfMeasure::DEGREE));
         WKTFormatterNNPtr f(
-            WKTFormatter::create(WKTFormatter::Convention::WKT2_2018));
+            WKTFormatter::create(WKTFormatter::Convention::WKT2_2019));
         crs->exportToWKT(f.get());
         auto expected = "GEOGCRS[\"unnamed\",\n"
                         "    ENSEMBLE[\"unnamed\",\n"
@@ -263,10 +264,10 @@ TEST(crs, EPSG_4326_as_WKT2) {
 
 // ---------------------------------------------------------------------------
 
-TEST(crs, EPSG_4326_as_WKT2_2018) {
+TEST(crs, EPSG_4326_as_WKT2_2019) {
     auto crs = GeographicCRS::EPSG_4326;
     WKTFormatterNNPtr f(
-        WKTFormatter::create(WKTFormatter::Convention::WKT2_2018));
+        WKTFormatter::create(WKTFormatter::Convention::WKT2_2019));
     crs->exportToWKT(f.get());
     EXPECT_EQ(f->toString(),
               "GEOGCRS[\"WGS 84\",\n"
@@ -322,10 +323,10 @@ TEST(crs, EPSG_4326_as_WKT2_SIMPLIFIED_single_line) {
 
 // ---------------------------------------------------------------------------
 
-TEST(crs, EPSG_4326_as_WKT2_2018_SIMPLIFIED) {
+TEST(crs, EPSG_4326_as_WKT2_2019_SIMPLIFIED) {
     auto crs = GeographicCRS::EPSG_4326;
     WKTFormatterNNPtr f(
-        WKTFormatter::create(WKTFormatter::Convention::WKT2_2018_SIMPLIFIED));
+        WKTFormatter::create(WKTFormatter::Convention::WKT2_2019_SIMPLIFIED));
     crs->exportToWKT(f.get());
     EXPECT_EQ(f->toString(),
               "GEOGCRS[\"WGS 84\",\n"
@@ -454,10 +455,10 @@ TEST(crs, EPSG_4979_as_WKT2_SIMPLIFIED) {
 
 // ---------------------------------------------------------------------------
 
-TEST(crs, EPSG_4979_as_WKT2_2018_SIMPLIFIED) {
+TEST(crs, EPSG_4979_as_WKT2_2019_SIMPLIFIED) {
     auto crs = GeographicCRS::EPSG_4979;
     WKTFormatterNNPtr f(
-        WKTFormatter::create(WKTFormatter::Convention::WKT2_2018_SIMPLIFIED));
+        WKTFormatter::create(WKTFormatter::Convention::WKT2_2019_SIMPLIFIED));
     crs->exportToWKT(f.get());
     EXPECT_EQ(f->toString(),
               "GEOGCRS[\"WGS 84\",\n"
@@ -755,7 +756,9 @@ TEST(crs, EPSG_27561_projected_with_geodetic_in_grad_as_PROJ_string_and_WKT1) {
         nn_crs->DerivedCRS::isEquivalentTo(createUnrelatedObject().get()));
 
     auto wkt1 = crs->exportToWKT(
-        WKTFormatter::create(WKTFormatter::Convention::WKT1_GDAL).get());
+        WKTFormatter::create(WKTFormatter::Convention::WKT1_GDAL,
+                             DatabaseContext::create())
+            .get());
     EXPECT_EQ(
         wkt1,
         "PROJCS[\"NTF (Paris) / Lambert Nord France\",\n"
@@ -856,7 +859,9 @@ TEST(crs, EPSG_2222_projected_unit_foot_as_PROJ_string_and_WKT1) {
               "+x_0=213360 +y_0=0 +datum=NAD83 +units=ft +no_defs +type=crs");
 
     auto wkt1 = crs->exportToWKT(
-        WKTFormatter::create(WKTFormatter::Convention::WKT1_GDAL).get());
+        WKTFormatter::create(WKTFormatter::Convention::WKT1_GDAL,
+                             DatabaseContext::create())
+            .get());
     EXPECT_EQ(wkt1,
               "PROJCS[\"NAD83 / Arizona East (ft)\",\n"
               "    GEOGCS[\"NAD83\",\n"
@@ -903,11 +908,13 @@ TEST(crs, projected_with_parameter_unit_different_than_cs_unit_as_WKT1) {
     ASSERT_TRUE(crs != nullptr);
 
     auto wkt1 = crs->exportToWKT(
-        WKTFormatter::create(WKTFormatter::Convention::WKT1_GDAL).get());
+        WKTFormatter::create(WKTFormatter::Convention::WKT1_GDAL,
+                             DatabaseContext::create())
+            .get());
     EXPECT_EQ(wkt1,
               "PROJCS[\"unknown\",\n"
               "    GEOGCS[\"unknown\",\n"
-              "        DATUM[\"Unknown_based_on_GRS80_ellipsoid\",\n"
+              "        DATUM[\"Unknown based on GRS80 ellipsoid\",\n"
               "            SPHEROID[\"GRS 1980\",6378137,298.257222101]],\n"
               "        PRIMEM[\"Greenwich\",0],\n"
               "        UNIT[\"degree\",0.0174532925199433,\n"
@@ -943,6 +950,16 @@ TEST(crs, EPSG_32661_projected_north_pole_north_east) {
     ASSERT_TRUE(op != nullptr);
     EXPECT_EQ(op->exportToPROJString(PROJStringFormatter::create().get()),
               proj_string);
+
+    auto opNormalized = op->normalizeForVisualization();
+    auto proj_string_normalized =
+        "+proj=pipeline +step +proj=unitconvert +xy_in=deg +xy_out=rad "
+        "+step "
+        "+proj=stere +lat_0=90 +lon_0=0 +k=0.994 +x_0=2000000 +y_0=2000000 "
+        "+ellps=WGS84";
+    EXPECT_EQ(
+        opNormalized->exportToPROJString(PROJStringFormatter::create().get()),
+        proj_string_normalized);
 }
 
 // ---------------------------------------------------------------------------
@@ -964,6 +981,16 @@ TEST(crs, EPSG_5041_projected_north_pole_east_north) {
     ASSERT_TRUE(op != nullptr);
     EXPECT_EQ(op->exportToPROJString(PROJStringFormatter::create().get()),
               proj_string);
+
+    auto opNormalized = op->normalizeForVisualization();
+    auto proj_string_normalized =
+        "+proj=pipeline +step +proj=unitconvert +xy_in=deg +xy_out=rad "
+        "+step "
+        "+proj=stere +lat_0=90 +lon_0=0 +k=0.994 +x_0=2000000 +y_0=2000000 "
+        "+ellps=WGS84";
+    EXPECT_EQ(
+        opNormalized->exportToPROJString(PROJStringFormatter::create().get()),
+        proj_string_normalized);
 }
 
 // ---------------------------------------------------------------------------
@@ -985,6 +1012,16 @@ TEST(crs, EPSG_32761_projected_south_pole_north_east) {
     ASSERT_TRUE(op != nullptr);
     EXPECT_EQ(op->exportToPROJString(PROJStringFormatter::create().get()),
               proj_string);
+
+    auto opNormalized = op->normalizeForVisualization();
+    auto proj_string_normalized =
+        "+proj=pipeline +step +proj=unitconvert +xy_in=deg +xy_out=rad "
+        "+step "
+        "+proj=stere +lat_0=-90 +lon_0=0 +k=0.994 +x_0=2000000 +y_0=2000000 "
+        "+ellps=WGS84";
+    EXPECT_EQ(
+        opNormalized->exportToPROJString(PROJStringFormatter::create().get()),
+        proj_string_normalized);
 }
 
 // ---------------------------------------------------------------------------
@@ -1006,6 +1043,16 @@ TEST(crs, EPSG_5042_projected_south_pole_east_north) {
     ASSERT_TRUE(op != nullptr);
     EXPECT_EQ(op->exportToPROJString(PROJStringFormatter::create().get()),
               proj_string);
+
+    auto opNormalized = op->normalizeForVisualization();
+    auto proj_string_normalized =
+        "+proj=pipeline +step +proj=unitconvert +xy_in=deg +xy_out=rad "
+        "+step "
+        "+proj=stere +lat_0=-90 +lon_0=0 +k=0.994 +x_0=2000000 +y_0=2000000 "
+        "+ellps=WGS84";
+    EXPECT_EQ(
+        opNormalized->exportToPROJString(PROJStringFormatter::create().get()),
+        proj_string_normalized);
 }
 
 // ---------------------------------------------------------------------------
@@ -1069,7 +1116,7 @@ TEST(crs, geocentricCRS_as_WKT2) {
     EXPECT_EQ(crs->exportToWKT(WKTFormatter::create().get()), expected);
     EXPECT_EQ(
         crs->exportToWKT(
-            WKTFormatter::create(WKTFormatter::Convention::WKT2_2018).get()),
+            WKTFormatter::create(WKTFormatter::Convention::WKT2_2019).get()),
         expected);
 
     EXPECT_TRUE(crs->isEquivalentTo(crs.get()));
@@ -1274,6 +1321,7 @@ TEST(crs, geodeticcrs_identify_no_db) {
 TEST(crs, geodeticcrs_identify_db) {
     auto dbContext = DatabaseContext::create();
     auto factory = AuthorityFactory::create(dbContext, "EPSG");
+
     {
         // No match
         auto res =
@@ -1511,6 +1559,95 @@ TEST(crs, geodeticcrs_identify_db) {
         EXPECT_EQ(res.front().first->identifiers()[0]->code(), "4326");
         EXPECT_EQ(res.front().second, 70);
     }
+
+    {
+        // Identify by code, but datum name is an alias of the official one
+        auto wkt = "GEOGCRS[\"GDA2020\",\n"
+                   "    DATUM[\"GDA2020\",\n"
+                   "        ELLIPSOID[\"GRS_1980\",6378137,298.257222101,\n"
+                   "            LENGTHUNIT[\"metre\",1]]],\n"
+                   "    PRIMEM[\"Greenwich\",0,\n"
+                   "        ANGLEUNIT[\"Degree\",0.0174532925199433]],\n"
+                   "    CS[ellipsoidal,2],\n"
+                   "        AXIS[\"geodetic latitude (Lat)\",north,\n"
+                   "            ORDER[1],\n"
+                   "            ANGLEUNIT[\"degree\",0.0174532925199433]],\n"
+                   "        AXIS[\"geodetic longitude (Lon)\",east,\n"
+                   "            ORDER[2],\n"
+                   "            ANGLEUNIT[\"degree\",0.0174532925199433]],\n"
+                   "    ID[\"EPSG\",7844]]";
+        auto obj = WKTParser().createFromWKT(wkt);
+        auto crs = nn_dynamic_pointer_cast<GeodeticCRS>(obj);
+        ASSERT_TRUE(crs != nullptr);
+
+        auto allFactory = AuthorityFactory::create(dbContext, std::string());
+        auto res = crs->identify(allFactory);
+        ASSERT_EQ(res.size(), 1U);
+        ASSERT_TRUE(!res.front().first->identifiers().empty());
+        EXPECT_EQ(*res.front().first->identifiers()[0]->codeSpace(), "EPSG");
+        EXPECT_EQ(res.front().first->identifiers()[0]->code(), "7844");
+        EXPECT_EQ(res.front().second, 100);
+
+        EXPECT_TRUE(crs->_isEquivalentTo(res.front().first.get(),
+                                         IComparable::Criterion::EQUIVALENT,
+                                         dbContext));
+        EXPECT_TRUE(res.front().first->_isEquivalentTo(
+            crs.get(), IComparable::Criterion::EQUIVALENT, dbContext));
+    }
+
+    {
+        // Identify by name, but datum name is an alias of the official one
+        auto wkt = "GEOGCRS[\"GDA2020\",\n"
+                   "    DATUM[\"GDA2020\",\n"
+                   "        ELLIPSOID[\"GRS_1980\",6378137,298.257222101,\n"
+                   "            LENGTHUNIT[\"metre\",1]]],\n"
+                   "    PRIMEM[\"Greenwich\",0,\n"
+                   "        ANGLEUNIT[\"Degree\",0.0174532925199433]],\n"
+                   "    CS[ellipsoidal,2],\n"
+                   "        AXIS[\"geodetic latitude (Lat)\",north,\n"
+                   "            ORDER[1],\n"
+                   "            ANGLEUNIT[\"degree\",0.0174532925199433]],\n"
+                   "        AXIS[\"geodetic longitude (Lon)\",east,\n"
+                   "            ORDER[2],\n"
+                   "            ANGLEUNIT[\"degree\",0.0174532925199433]]]";
+        auto obj = WKTParser().createFromWKT(wkt);
+        auto crs = nn_dynamic_pointer_cast<GeodeticCRS>(obj);
+        ASSERT_TRUE(crs != nullptr);
+
+        auto allFactory = AuthorityFactory::create(dbContext, std::string());
+        auto res = crs->identify(allFactory);
+        ASSERT_EQ(res.size(), 1U);
+        ASSERT_TRUE(!res.front().first->identifiers().empty());
+        EXPECT_EQ(*res.front().first->identifiers()[0]->codeSpace(), "EPSG");
+        EXPECT_EQ(res.front().first->identifiers()[0]->code(), "7844");
+        EXPECT_EQ(res.front().second, 100);
+
+        EXPECT_TRUE(crs->_isEquivalentTo(res.front().first.get(),
+                                         IComparable::Criterion::EQUIVALENT,
+                                         dbContext));
+        EXPECT_TRUE(res.front().first->_isEquivalentTo(
+            crs.get(), IComparable::Criterion::EQUIVALENT, dbContext));
+    }
+
+    {
+        // Identify "a" ESRI WKT representation of GDA2020. See #1911
+        auto wkt = "GEOGCS[\"GDA2020\",DATUM[\"D_GDA2020\","
+                   "SPHEROID[\"GRS_1980\",6378137.0,298.257222101]],"
+                   "PRIMEM[\"Greenwich\",0.0],"
+                   "UNIT[\"Degree\",0.017453292519943295]]";
+        auto obj =
+            WKTParser().attachDatabaseContext(dbContext).createFromWKT(wkt);
+        auto crs = nn_dynamic_pointer_cast<GeographicCRS>(obj);
+        ASSERT_TRUE(crs != nullptr);
+
+        auto allFactory = AuthorityFactory::create(dbContext, std::string());
+        auto res = crs->identify(allFactory);
+        ASSERT_EQ(res.size(), 1U);
+        ASSERT_TRUE(!res.front().first->identifiers().empty());
+        EXPECT_EQ(*res.front().first->identifiers()[0]->codeSpace(), "EPSG");
+        EXPECT_EQ(res.front().first->identifiers()[0]->code(), "7844");
+        EXPECT_EQ(res.front().second, 100);
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1614,7 +1751,7 @@ TEST(crs, projectedCRS_as_WKT2) {
 
 // ---------------------------------------------------------------------------
 
-TEST(crs, projectedCRS_as_WKT2_2018) {
+TEST(crs, projectedCRS_as_WKT2_2019) {
     auto crs = createProjected();
 
     auto expected =
@@ -1655,7 +1792,7 @@ TEST(crs, projectedCRS_as_WKT2_2018) {
 
     EXPECT_EQ(
         crs->exportToWKT(
-            WKTFormatter::create(WKTFormatter::Convention::WKT2_2018).get()),
+            WKTFormatter::create(WKTFormatter::Convention::WKT2_2019).get()),
         expected);
 }
 // ---------------------------------------------------------------------------
@@ -1690,7 +1827,7 @@ TEST(crs, projectedCRS_as_WKT2_simplified) {
 
 // ---------------------------------------------------------------------------
 
-TEST(crs, projectedCRS_as_WKT2_2018_simplified) {
+TEST(crs, projectedCRS_as_WKT2_2019_simplified) {
     auto crs = createProjected();
 
     auto expected =
@@ -1714,7 +1851,7 @@ TEST(crs, projectedCRS_as_WKT2_2018_simplified) {
 
     EXPECT_EQ(
         crs->exportToWKT(
-            WKTFormatter::create(WKTFormatter::Convention::WKT2_2018_SIMPLIFIED)
+            WKTFormatter::create(WKTFormatter::Convention::WKT2_2019_SIMPLIFIED)
                 .get()),
         expected);
 }
@@ -2277,6 +2414,69 @@ TEST(crs, projectedCRS_identify_db) {
         EXPECT_EQ(res.front().first->getEPSGCode(), 6646);
         EXPECT_EQ(res.front().second, 70);
     }
+    {
+        // Identify from a WKT ESRI that has the same name has ESRI:102039
+        // but uses us-ft instead of metres!
+        auto obj = WKTParser().attachDatabaseContext(dbContext).createFromWKT(
+            "PROJCS[\"USA_Contiguous_Albers_Equal_Area_Conic_USGS_version\","
+            "GEOGCS[\"GCS_North_American_1983\","
+            "DATUM[\"D_North_American_1983\",SPHEROID[\"GRS_1980\","
+            "6378137.0,298.257222101]],PRIMEM[\"Greenwich\",0.0],"
+            "UNIT[\"Degree\",0.0174532925199433]],PROJECTION[\"Albers\"],"
+            "PARAMETER[\"False_Easting\",0.0],"
+            "PARAMETER[\"False_Northing\",0.0],"
+            "PARAMETER[\"Central_Meridian\",-96.0],"
+            "PARAMETER[\"Standard_Parallel_1\",29.5],"
+            "PARAMETER[\"Standard_Parallel_2\",45.5],"
+            "PARAMETER[\"Latitude_Of_Origin\",23.0],"
+            "UNIT[\"Foot_US\",0.3048006096012192]]");
+        auto crs = nn_dynamic_pointer_cast<ProjectedCRS>(obj);
+        ASSERT_TRUE(crs != nullptr);
+        auto factoryAll = AuthorityFactory::create(dbContext, std::string());
+        auto res = crs->identify(factoryAll);
+        EXPECT_GE(res.size(), 1U);
+        bool found = false;
+        for (const auto &pair : res) {
+            if (pair.first->identifiers()[0]->code() == "102039") {
+                found = true;
+                EXPECT_EQ(pair.second, 25);
+                break;
+            }
+        }
+        EXPECT_TRUE(found);
+    }
+}
+
+// ---------------------------------------------------------------------------
+
+TEST(crs, projectedCRS_identify_wrong_auth_name_case) {
+    auto dbContext = DatabaseContext::create();
+    auto factoryAnonymous = AuthorityFactory::create(dbContext, std::string());
+    auto obj =
+        WKTParser()
+            .attachDatabaseContext(dbContext)
+            .setStrict(false)
+            .createFromWKT(
+                "PROJCS[\"World_Cylindrical_Equal_Area\","
+                "GEOGCS[\"GCS_WGS_1984\","
+                "DATUM[\"D_WGS_1984\",SPHEROID[\"WGS_1984\","
+                "6378137.0,298.257223563]],"
+                "PRIMEM[\"Greenwich\",0.0],"
+                "UNIT[\"Degree\",0.0174532925199433]],"
+                "PROJECTION[\"Cylindrical_Equal_Area\"],"
+                "PARAMETER[\"False_Easting\",0.0],"
+                "PARAMETER[\"False_Northing\",0.0],"
+                "PARAMETER[\"Central_Meridian\",0.0],"
+                "PARAMETER[\"Standard_Parallel_1\",0.0],UNIT[\"Meter\",1.0],"
+                "AUTHORITY[\"Esri\",54034]]"); // should be ESRI all caps
+    auto crs = nn_dynamic_pointer_cast<ProjectedCRS>(obj);
+    ASSERT_TRUE(crs != nullptr);
+    auto res = crs->identify(factoryAnonymous);
+    ASSERT_EQ(res.size(), 1U);
+    const auto &ids = res.front().first->identifiers();
+    ASSERT_EQ(ids.size(), 1U);
+    EXPECT_EQ(*(ids.front()->codeSpace()), "ESRI");
+    EXPECT_EQ(ids.front()->code(), "54034");
 }
 
 // ---------------------------------------------------------------------------
@@ -2845,7 +3045,7 @@ TEST(crs, usage) {
     ASSERT_TRUE(crs != nullptr);
 
     auto got_wkt = crs->exportToWKT(
-        WKTFormatter::create(WKTFormatter::Convention::WKT2_2018).get());
+        WKTFormatter::create(WKTFormatter::Convention::WKT2_2019).get());
     auto expected = "GEODCRS[\"JGD2000\",\n"
                     "    DATUM[\"Japanese Geodetic Datum 2000\",\n"
                     "        ELLIPSOID[\"GRS 1980\",6378137,298.257222101,\n"
@@ -3061,7 +3261,7 @@ TEST(crs, verticalCRS_datum_ensemble) {
         PropertyMap().set(IdentifiedObject::NAME_KEY, "unnamed"), nullptr,
         ensemble, VerticalCS::createGravityRelatedHeight(UnitOfMeasure::METRE));
     WKTFormatterNNPtr f(
-        WKTFormatter::create(WKTFormatter::Convention::WKT2_2018));
+        WKTFormatter::create(WKTFormatter::Convention::WKT2_2019));
     f->simulCurNodeHasId();
     crs->exportToWKT(f.get());
     auto expected = "VERTCRS[\"unnamed\",\n"
@@ -3131,6 +3331,46 @@ static CompoundCRSNNPtr createCompoundCRS() {
 
 // ---------------------------------------------------------------------------
 
+TEST(crs, compoundCRS_valid) {
+    // geographic 2D + vertical
+    CompoundCRS::create(
+        PropertyMap(),
+        std::vector<CRSNNPtr>{GeographicCRS::EPSG_4326, createVerticalCRS()});
+
+    // projected 2D + vertical
+    CompoundCRS::create(
+        PropertyMap(),
+        std::vector<CRSNNPtr>{createProjected(), createVerticalCRS()});
+}
+
+// ---------------------------------------------------------------------------
+
+TEST(crs, compoundCRS_invalid) {
+    EXPECT_THROW(CompoundCRS::create(PropertyMap(), {}),
+                 InvalidCompoundCRSException);
+
+    // Only one component
+    EXPECT_THROW(CompoundCRS::create(PropertyMap(),
+                                     std::vector<CRSNNPtr>{createProjected()}),
+                 InvalidCompoundCRSException);
+
+    // Two geographic
+    EXPECT_THROW(
+        CompoundCRS::create(PropertyMap(),
+                            std::vector<CRSNNPtr>{GeographicCRS::EPSG_4326,
+                                                  GeographicCRS::EPSG_4326}),
+        InvalidCompoundCRSException);
+
+    // geographic 3D + vertical
+    EXPECT_THROW(
+        CompoundCRS::create(PropertyMap(),
+                            std::vector<CRSNNPtr>{GeographicCRS::EPSG_4979,
+                                                  createVerticalCRS()}),
+        InvalidCompoundCRSException);
+}
+
+// ---------------------------------------------------------------------------
+
 TEST(crs, compoundCRS_as_WKT2) {
     auto crs = createCompoundCRS();
     auto expected =
@@ -3185,18 +3425,10 @@ TEST(crs, compoundCRS_isEquivalentTo) {
     EXPECT_TRUE(crs->isEquivalentTo(crs.get()));
     EXPECT_TRUE(crs->shallowClone()->isEquivalentTo(crs.get()));
     EXPECT_FALSE(crs->isEquivalentTo(createUnrelatedObject().get()));
-    auto compoundCRSOfProjCRS =
-        CompoundCRS::create(PropertyMap().set(IdentifiedObject::NAME_KEY, ""),
-                            std::vector<CRSNNPtr>{createProjected()});
-    auto emptyCompoundCRS =
-        CompoundCRS::create(PropertyMap().set(IdentifiedObject::NAME_KEY, ""),
-                            std::vector<CRSNNPtr>{});
-    EXPECT_FALSE(compoundCRSOfProjCRS->isEquivalentTo(emptyCompoundCRS.get()));
-    auto compoundCRSOfGeogCRS =
-        CompoundCRS::create(PropertyMap().set(IdentifiedObject::NAME_KEY, ""),
-                            std::vector<CRSNNPtr>{GeographicCRS::EPSG_4326});
-    EXPECT_FALSE(
-        compoundCRSOfProjCRS->isEquivalentTo(compoundCRSOfGeogCRS.get()));
+    auto otherCompoundCRS = CompoundCRS::create(
+        PropertyMap().set(IdentifiedObject::NAME_KEY, ""),
+        std::vector<CRSNNPtr>{GeographicCRS::EPSG_4326, createVerticalCRS()});
+    EXPECT_FALSE(crs->isEquivalentTo(otherCompoundCRS.get()));
 }
 
 // ---------------------------------------------------------------------------
@@ -3350,6 +3582,17 @@ TEST(crs, compoundCRS_identify_db) {
         ASSERT_EQ(res.size(), 1U);
         EXPECT_EQ(res.front().first->getEPSGCode(), 8769);
         EXPECT_EQ(res.front().second, 70);
+    }
+    {
+        auto obj = PROJStringParser().createFromPROJString(
+            "+proj=tmerc +lat_0=0 +lon_0=72.05 +k=1 +x_0=3500000 "
+            "+y_0=-5811057.63 +ellps=krass "
+            "+towgs84=23.57,-140.95,-79.8,0,-0.35,-0.79,-0.22 "
+            "+geoidgrids=egm08_25.gtx +units=m +no_defs +type=crs");
+        auto crs = nn_dynamic_pointer_cast<CompoundCRS>(obj);
+        ASSERT_TRUE(crs != nullptr);
+        // Just check we don't get an exception
+        crs->identify(factory);
     }
 }
 
@@ -3753,6 +3996,21 @@ TEST(crs, boundCRS_identify_db) {
             WKTFormatter::create(WKTFormatter::Convention::WKT1_GDAL).get());
         EXPECT_TRUE(wkt.find("32122") != std::string::npos) << wkt;
     }
+
+    {
+        // Identify from a PROJ string with +towgs84
+        auto obj = PROJStringParser().createFromPROJString(
+            "+proj=utm +zone=48 +a=6377276.345 +b=6356075.41314024 "
+            "+towgs84=198,881,317,0,0,0,0 +units=m +no_defs +type=crs");
+        auto crs = nn_dynamic_pointer_cast<BoundCRS>(obj);
+        ASSERT_TRUE(crs != nullptr);
+        auto res = crs->identify(factoryEPSG);
+        ASSERT_EQ(res.size(), 1U);
+        auto boundCRS = dynamic_cast<const BoundCRS *>(res.front().first.get());
+        ASSERT_TRUE(boundCRS != nullptr);
+        EXPECT_EQ(boundCRS->baseCRS()->getEPSGCode(), 3148);
+        EXPECT_EQ(res.front().second, 70);
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -3928,11 +4186,11 @@ TEST(crs, extractGeographicCRS) {
               GeographicCRS::EPSG_4326);
     EXPECT_EQ(createProjected()->extractGeographicCRS(),
               GeographicCRS::EPSG_4326);
-    EXPECT_EQ(
-        CompoundCRS::create(PropertyMap(),
-                            std::vector<CRSNNPtr>{GeographicCRS::EPSG_4326})
-            ->extractGeographicCRS(),
-        GeographicCRS::EPSG_4326);
+    EXPECT_EQ(CompoundCRS::create(
+                  PropertyMap(), std::vector<CRSNNPtr>{GeographicCRS::EPSG_4326,
+                                                       createVerticalCRS()})
+                  ->extractGeographicCRS(),
+              GeographicCRS::EPSG_4326);
 }
 
 // ---------------------------------------------------------------------------
@@ -4017,7 +4275,7 @@ TEST(crs, derivedGeographicCRS_WKT2) {
 
 // ---------------------------------------------------------------------------
 
-TEST(crs, derivedGeographicCRS_WKT2_2018) {
+TEST(crs, derivedGeographicCRS_WKT2_2019) {
 
     auto expected = "GEOGCRS[\"WMO Atlantic Pole\",\n"
                     "    BASEGEOGCRS[\"WGS 84\",\n"
@@ -4049,7 +4307,7 @@ TEST(crs, derivedGeographicCRS_WKT2_2018) {
 
     EXPECT_EQ(
         createDerivedGeographicCRS()->exportToWKT(
-            WKTFormatter::create(WKTFormatter::Convention::WKT2_2018).get()),
+            WKTFormatter::create(WKTFormatter::Convention::WKT2_2019).get()),
         expected);
 }
 
@@ -4093,6 +4351,11 @@ TEST(crs, derivedGeographicCRS_to_PROJ) {
     auto obj = WKTParser().createFromWKT(wkt);
     auto crs = nn_dynamic_pointer_cast<DerivedGeographicCRS>(obj);
     ASSERT_TRUE(crs != nullptr);
+    EXPECT_EQ(
+        crs->exportToPROJString(PROJStringFormatter::create().get()),
+        "+proj=ob_tran +o_proj=longlat +o_lat_p=52 +o_lon_p=-30 +lon_0=-25 "
+        "+datum=WGS84 +no_defs +type=crs");
+
     auto op = CoordinateOperationFactory::create()->createOperation(
         crs->baseCRS(), NN_NO_CHECK(crs));
     ASSERT_TRUE(op != nullptr);
@@ -4207,7 +4470,7 @@ TEST(crs, derivedGeodeticCRS_WKT2) {
 
 // ---------------------------------------------------------------------------
 
-TEST(crs, derivedGeodeticCRS_WKT2_2018) {
+TEST(crs, derivedGeodeticCRS_WKT2_2019) {
 
     auto expected = "GEODCRS[\"Derived geodetic CRS\",\n"
                     "    BASEGEOGCRS[\"WGS 84\",\n"
@@ -4234,7 +4497,7 @@ TEST(crs, derivedGeodeticCRS_WKT2_2018) {
 
     EXPECT_EQ(
         createDerivedGeodeticCRS()->exportToWKT(
-            WKTFormatter::create(WKTFormatter::Convention::WKT2_2018).get()),
+            WKTFormatter::create(WKTFormatter::Convention::WKT2_2019).get()),
         expected);
 }
 
@@ -4266,7 +4529,7 @@ static DerivedProjectedCRSNNPtr createDerivedProjectedCRS() {
 
 // ---------------------------------------------------------------------------
 
-TEST(crs, derivedProjectedCRS_WKT2_2018) {
+TEST(crs, derivedProjectedCRS_WKT2_2019) {
 
     auto expected =
         "DERIVEDPROJCRS[\"derived projectedCRS\",\n"
@@ -4310,7 +4573,7 @@ TEST(crs, derivedProjectedCRS_WKT2_2018) {
     auto crs = createDerivedProjectedCRS();
     EXPECT_EQ(
         crs->exportToWKT(
-            WKTFormatter::create(WKTFormatter::Convention::WKT2_2018).get()),
+            WKTFormatter::create(WKTFormatter::Convention::WKT2_2019).get()),
         expected);
 
     EXPECT_TRUE(crs->isEquivalentTo(crs.get()));
@@ -4381,7 +4644,7 @@ TEST(crs, dateTimeTemporalCRS_WKT2) {
 
 // ---------------------------------------------------------------------------
 
-TEST(crs, dateTimeTemporalCRS_WKT2_2018) {
+TEST(crs, dateTimeTemporalCRS_WKT2_2019) {
 
     auto expected = "TIMECRS[\"Temporal CRS\",\n"
                     "    TDATUM[\"Gregorian calendar\",\n"
@@ -4392,7 +4655,7 @@ TEST(crs, dateTimeTemporalCRS_WKT2_2018) {
 
     EXPECT_EQ(
         createDateTimeTemporalCRS()->exportToWKT(
-            WKTFormatter::create(WKTFormatter::Convention::WKT2_2018).get()),
+            WKTFormatter::create(WKTFormatter::Convention::WKT2_2019).get()),
         expected);
 }
 
@@ -4418,7 +4681,7 @@ static TemporalCRSNNPtr createTemporalCountCRSWithConvFactor() {
 
 // ---------------------------------------------------------------------------
 
-TEST(crs, temporalCountCRSWithConvFactor_WKT2_2018) {
+TEST(crs, temporalCountCRSWithConvFactor_WKT2_2019) {
 
     auto expected = "TIMECRS[\"GPS milliseconds\",\n"
                     "    TDATUM[\"GPS time origin\",\n"
@@ -4430,7 +4693,7 @@ TEST(crs, temporalCountCRSWithConvFactor_WKT2_2018) {
 
     EXPECT_EQ(
         createTemporalCountCRSWithConvFactor()->exportToWKT(
-            WKTFormatter::create(WKTFormatter::Convention::WKT2_2018).get()),
+            WKTFormatter::create(WKTFormatter::Convention::WKT2_2019).get()),
         expected);
 }
 
@@ -4458,7 +4721,7 @@ static TemporalCRSNNPtr createTemporalCountCRSWithoutConvFactor() {
 
 // ---------------------------------------------------------------------------
 
-TEST(crs, temporalCountCRSWithoutConvFactor_WKT2_2018) {
+TEST(crs, temporalCountCRSWithoutConvFactor_WKT2_2019) {
 
     auto expected = "TIMECRS[\"Calendar hours from 1979-12-29\",\n"
                     "    TDATUM[\"29 December 1979\",\n"
@@ -4470,7 +4733,7 @@ TEST(crs, temporalCountCRSWithoutConvFactor_WKT2_2018) {
 
     EXPECT_EQ(
         createTemporalCountCRSWithoutConvFactor()->exportToWKT(
-            WKTFormatter::create(WKTFormatter::Convention::WKT2_2018).get()),
+            WKTFormatter::create(WKTFormatter::Convention::WKT2_2019).get()),
         expected);
 }
 
@@ -4496,7 +4759,7 @@ static TemporalCRSNNPtr createTemporalMeasureCRSWithoutConvFactor() {
 
 // ---------------------------------------------------------------------------
 
-TEST(crs, temporalMeasureCRSWithoutConvFactor_WKT2_2018) {
+TEST(crs, temporalMeasureCRSWithoutConvFactor_WKT2_2019) {
 
     auto expected = "TIMECRS[\"Decimal Years CE\",\n"
                     "    TDATUM[\"Common Era\",\n"
@@ -4508,7 +4771,7 @@ TEST(crs, temporalMeasureCRSWithoutConvFactor_WKT2_2018) {
 
     EXPECT_EQ(
         createTemporalMeasureCRSWithoutConvFactor()->exportToWKT(
-            WKTFormatter::create(WKTFormatter::Convention::WKT2_2018).get()),
+            WKTFormatter::create(WKTFormatter::Convention::WKT2_2019).get()),
         expected);
 }
 
@@ -4718,7 +4981,7 @@ TEST(crs, DerivedEngineeringCRS_WKT2) {
 
     EXPECT_EQ(
         crs->exportToWKT(
-            WKTFormatter::create(WKTFormatter::Convention::WKT2_2018).get()),
+            WKTFormatter::create(WKTFormatter::Convention::WKT2_2019).get()),
         expected);
     EXPECT_THROW(
         createDerivedEngineeringCRS()->exportToWKT(
@@ -4775,7 +5038,7 @@ TEST(crs, DerivedParametricCRS_WKT2) {
 
     EXPECT_EQ(
         crs->exportToWKT(
-            WKTFormatter::create(WKTFormatter::Convention::WKT2_2018).get()),
+            WKTFormatter::create(WKTFormatter::Convention::WKT2_2019).get()),
         expected);
 }
 
@@ -4830,7 +5093,7 @@ TEST(crs, DeriveTemporalCRS_WKT2) {
 
     EXPECT_EQ(
         crs->exportToWKT(
-            WKTFormatter::create(WKTFormatter::Convention::WKT2_2018).get()),
+            WKTFormatter::create(WKTFormatter::Convention::WKT2_2019).get()),
         expected);
 }
 
@@ -4986,6 +5249,18 @@ TEST(crs, crs_createBoundCRSToWGS84IfPossible) {
         auto bound = crs->createBoundCRSToWGS84IfPossible(
             dbContext, CoordinateOperationContext::IntermediateCRSUse::NEVER);
         EXPECT_EQ(bound, crs);
+    }
+    {
+        // GDA2020 geocentric
+        auto crs = factory->createCoordinateReferenceSystem("7842");
+        const auto time_before =
+            ::testing::UnitTest::GetInstance()->elapsed_time();
+        crs->createBoundCRSToWGS84IfPossible(
+            dbContext, CoordinateOperationContext::IntermediateCRSUse::
+                           IF_NO_DIRECT_TRANSFORMATION);
+        const auto time_after =
+            ::testing::UnitTest::GetInstance()->elapsed_time();
+        EXPECT_LE(time_after - time_before, 500);
     }
 }
 
@@ -5223,4 +5498,175 @@ TEST(crs, getNonDeprecated) {
         auto list = crs->getNonDeprecated(dbContext);
         ASSERT_EQ(list.size(), 1U);
     }
+}
+
+// ---------------------------------------------------------------------------
+
+TEST(crs, promoteTo3D_and_demoteTo2D) {
+    auto dbContext = DatabaseContext::create();
+    {
+        auto crs = GeographicCRS::EPSG_4326;
+        auto crs3D = crs->promoteTo3D(std::string(), nullptr);
+        auto crs3DAsGeog = nn_dynamic_pointer_cast<GeographicCRS>(crs3D);
+        ASSERT_TRUE(crs3DAsGeog != nullptr);
+        EXPECT_EQ(crs3DAsGeog->coordinateSystem()->axisList().size(), 3U);
+        EXPECT_TRUE(crs3D->promoteTo3D(std::string(), nullptr)
+                        ->isEquivalentTo(crs3D.get()));
+    }
+    {
+        auto crs = GeographicCRS::EPSG_4326;
+        auto crs3D = crs->promoteTo3D(std::string(), dbContext);
+        auto crs3DAsGeog = nn_dynamic_pointer_cast<GeographicCRS>(crs3D);
+        ASSERT_TRUE(crs3DAsGeog != nullptr);
+        EXPECT_EQ(crs3DAsGeog->coordinateSystem()->axisList().size(), 3U);
+        EXPECT_TRUE(!crs3DAsGeog->identifiers().empty());
+
+        auto demoted = crs3DAsGeog->demoteTo2D(std::string(), dbContext);
+        EXPECT_EQ(demoted->coordinateSystem()->axisList().size(), 2U);
+        EXPECT_TRUE(!demoted->identifiers().empty());
+    }
+    {
+        auto crs = createProjected();
+        auto crs3D = crs->promoteTo3D(std::string(), nullptr);
+        auto crs3DAsProjected = nn_dynamic_pointer_cast<ProjectedCRS>(crs3D);
+        ASSERT_TRUE(crs3DAsProjected != nullptr);
+        EXPECT_EQ(crs3DAsProjected->coordinateSystem()->axisList().size(), 3U);
+        EXPECT_EQ(
+            crs3DAsProjected->baseCRS()->coordinateSystem()->axisList().size(),
+            3U);
+        EXPECT_TRUE(crs3D->promoteTo3D(std::string(), nullptr)
+                        ->isEquivalentTo(crs3D.get()));
+
+        auto demoted = crs3DAsProjected->demoteTo2D(std::string(), nullptr);
+        EXPECT_EQ(demoted->coordinateSystem()->axisList().size(), 2U);
+        EXPECT_EQ(demoted->baseCRS()->coordinateSystem()->axisList().size(),
+                  2U);
+    }
+    {
+        auto crs = createProjected();
+        auto crs3D = crs->promoteTo3D(std::string(), dbContext);
+        auto crs3DAsProjected = nn_dynamic_pointer_cast<ProjectedCRS>(crs3D);
+        ASSERT_TRUE(crs3DAsProjected != nullptr);
+        EXPECT_EQ(crs3DAsProjected->coordinateSystem()->axisList().size(), 3U);
+        EXPECT_EQ(
+            crs3DAsProjected->baseCRS()->coordinateSystem()->axisList().size(),
+            3U);
+        EXPECT_TRUE(!crs3DAsProjected->baseCRS()->identifiers().empty());
+
+        auto demoted = crs3DAsProjected->demoteTo2D(std::string(), dbContext);
+        EXPECT_EQ(demoted->coordinateSystem()->axisList().size(), 2U);
+        EXPECT_EQ(demoted->baseCRS()->coordinateSystem()->axisList().size(),
+                  2U);
+        EXPECT_TRUE(!demoted->baseCRS()->identifiers().empty());
+    }
+    {
+        auto crs = BoundCRS::createFromTOWGS84(
+            createProjected(), std::vector<double>{1, 2, 3, 4, 5, 6, 7});
+        auto crs3D = crs->promoteTo3D(std::string(), dbContext);
+        auto crs3DAsBound = nn_dynamic_pointer_cast<BoundCRS>(crs3D);
+        ASSERT_TRUE(crs3DAsBound != nullptr);
+        {
+            auto baseCRS =
+                nn_dynamic_pointer_cast<ProjectedCRS>(crs3DAsBound->baseCRS());
+            ASSERT_TRUE(baseCRS != nullptr);
+            EXPECT_EQ(baseCRS->coordinateSystem()->axisList().size(), 3U);
+        }
+
+        auto demoted = crs3DAsBound->demoteTo2D(std::string(), nullptr);
+        auto crs2DAsBound = nn_dynamic_pointer_cast<BoundCRS>(demoted);
+        ASSERT_TRUE(crs2DAsBound != nullptr);
+        {
+            auto baseCRS =
+                nn_dynamic_pointer_cast<ProjectedCRS>(crs2DAsBound->baseCRS());
+            ASSERT_TRUE(baseCRS != nullptr);
+            EXPECT_EQ(baseCRS->coordinateSystem()->axisList().size(), 2U);
+        }
+    }
+
+    {
+        auto compoundCRS = createCompoundCRS();
+        auto demoted = compoundCRS->demoteTo2D(std::string(), nullptr);
+        EXPECT_TRUE(dynamic_cast<const ProjectedCRS *>(demoted.get()) !=
+                    nullptr);
+    }
+}
+
+// ---------------------------------------------------------------------------
+
+TEST(crs, projected_normalizeForVisualization_do_not_mess_deriving_conversion) {
+
+    auto authFactory =
+        AuthorityFactory::create(DatabaseContext::create(), "EPSG");
+    // Something with non standard order
+    auto projCRS = authFactory->createProjectedCRS("3035");
+    {
+        auto src = GeographicCRS::EPSG_4326;
+        auto op =
+            CoordinateOperationFactory::create()->createOperation(src, projCRS);
+        ASSERT_TRUE(op != nullptr);
+        // Make sure to run that in a scope, so that the object get destroyed
+        op->normalizeForVisualization();
+    }
+    EXPECT_EQ(projCRS->derivingConversion()->targetCRS().get(), projCRS.get());
+}
+
+// ---------------------------------------------------------------------------
+
+TEST(crs, projected_promoteTo3D_do_not_mess_deriving_conversion) {
+
+    auto projCRS = createProjected();
+    {
+        // Make sure to run that in a scope, so that the object get destroyed
+        projCRS->promoteTo3D(std::string(), nullptr);
+    }
+    EXPECT_EQ(projCRS->derivingConversion()->targetCRS().get(), projCRS.get());
+}
+
+// ---------------------------------------------------------------------------
+
+TEST(crs, projected_demoteTo2D_do_not_mess_deriving_conversion) {
+
+    auto projCRS = nn_dynamic_pointer_cast<ProjectedCRS>(
+        createProjected()->promoteTo3D(std::string(), nullptr));
+    {
+        // Make sure to run that in a scope, so that the object get destroyed
+        projCRS->demoteTo2D(std::string(), nullptr);
+    }
+    EXPECT_EQ(projCRS->derivingConversion()->targetCRS().get(), projCRS.get());
+}
+
+// ---------------------------------------------------------------------------
+
+TEST(crs, projected_alterGeodeticCRS_do_not_mess_deriving_conversion) {
+
+    auto projCRS = createProjected();
+    {
+        // Make sure to run that in a scope, so that the object get destroyed
+        projCRS->alterGeodeticCRS(NN_NO_CHECK(projCRS->extractGeographicCRS()));
+    }
+    EXPECT_EQ(projCRS->derivingConversion()->targetCRS().get(), projCRS.get());
+}
+
+// ---------------------------------------------------------------------------
+
+TEST(crs, projected_alterCSLinearUnit_do_not_mess_deriving_conversion) {
+
+    auto projCRS = createProjected();
+    {
+        // Make sure to run that in a scope, so that the object get destroyed
+        projCRS->alterCSLinearUnit(UnitOfMeasure("my unit", 2));
+    }
+    EXPECT_EQ(projCRS->derivingConversion()->targetCRS().get(), projCRS.get());
+}
+
+// ---------------------------------------------------------------------------
+
+TEST(crs, projected_alterParametersLinearUnit_do_not_mess_deriving_conversion) {
+
+    auto projCRS = createProjected();
+    {
+        // Make sure to run that in a scope, so that the object get destroyed
+        projCRS->alterParametersLinearUnit(UnitOfMeasure::METRE, false);
+    }
+    EXPECT_EQ(projCRS->derivingConversion()->targetCRS().get(), projCRS.get());
 }

@@ -43,6 +43,7 @@
 // PROJ include order is sensitive
 // clang-format off
 #include "proj.h"
+#include "proj_experimental.h"
 #include "proj_internal.h"
 #include "emess.h"
 #include "utils.h"
@@ -116,7 +117,7 @@ static void process(FILE *fid)
 
         /* To avoid breaking existing tests, we read what is a possible t    */
         /* component of the input and rewind the s-pointer so that the final */
-        /* output has consistant behaviour, with or without t values.        */
+        /* output has consistent behaviour, with or without t values.        */
         /* This is a bit of a hack, in most cases 4D coordinates will be     */
         /* written to STDOUT (except when using -E) but the output format    */
         /* speficied with -f is not respected for the t component, rather it */
@@ -429,19 +430,6 @@ int main(int argc, char **argv) {
                         for (lu = proj_list_units(); lu->id; ++lu)
                             (void)printf("%12s %-20s %s\n", lu->id,
                                          lu->to_meter, lu->name);
-                    } else if (arg[1] == 'd') { /* list datums */
-                        const struct PJ_DATUMS *ld;
-
-                        printf("__datum_id__ __ellipse___ "
-                               "__definition/"
-                               "comments______________________________\n");
-                        for (ld = pj_get_datums_ref(); ld->id; ++ld) {
-                            printf("%12s %-12s %-30s\n", ld->id, ld->ellipse_id,
-                                   ld->defn);
-                            if (ld->comments != nullptr &&
-                                strlen(ld->comments) > 0)
-                                printf("%25s %s\n", " ", ld->comments);
-                        }
                     } else if (arg[1] == 'm') { /* list prime meridians */
                         const struct PJ_PRIME_MERIDIANS *lpm;
 
@@ -591,12 +579,33 @@ int main(int argc, char **argv) {
         }
         srcIsGeog = true;
     }
+    proj_destroy(src);
+    proj_destroy(dst);
+
+    src = proj_create(nullptr, pj_add_type_crs_if_needed(fromStr).c_str());
+    dst = proj_create(nullptr, pj_add_type_crs_if_needed(toStr).c_str());
+
+    if( proj_get_type(src) == PJ_TYPE_COMPOUND_CRS ||
+        proj_get_type(dst) == PJ_TYPE_COMPOUND_CRS ) {
+        auto src3D = proj_crs_promote_to_3D(nullptr, nullptr, src);
+        if( src3D ) {
+            proj_destroy(src);
+            src = src3D;
+        }
+
+        auto dst3D = proj_crs_promote_to_3D(nullptr, nullptr, dst);
+        if( dst3D ) {
+            proj_destroy(dst);
+            dst = dst3D;
+        }
+    }
+
+    transformation = proj_create_crs_to_crs_from_pj(nullptr, src, dst,
+                                                    nullptr, nullptr);
 
     proj_destroy(src);
     proj_destroy(dst);
 
-    transformation = proj_create_crs_to_crs(nullptr, fromStr.c_str(),
-                                            toStr.c_str(), nullptr);
     if (!transformation) {
         emess(3, "cannot initialize transformation\ncause: %s",
               pj_strerrno(pj_errno));
@@ -645,7 +654,7 @@ int main(int argc, char **argv) {
 
     proj_destroy(transformation);
 
-    pj_deallocate_grids();
+    proj_cleanup();
 
     exit(0); /* normal completion */
 }

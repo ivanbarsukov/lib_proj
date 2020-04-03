@@ -5,7 +5,7 @@
 
 #include "proj.h"
 #include "proj_internal.h"
-#include "proj_math.h"
+#include <math.h>
 
 namespace { // anonymous namespace
 struct pj_opaque {
@@ -117,6 +117,8 @@ PJ *PROJECTION(eqdc) {
     } else {
         if (secant)
             Q->n = (cosphi - cos(Q->phi2)) / (Q->phi2 - Q->phi1);
+        if (Q->n == 0)
+            return destructor (P, PJD_ERR_CONIC_LAT_EQUAL);
         Q->c = Q->phi1 + cos(Q->phi1) / Q->n;
         Q->rho0 = Q->c - P->phi0;
     }

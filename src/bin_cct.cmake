@@ -14,7 +14,7 @@ target_compile_options(cct PRIVATE ${PROJ_CXX_WARN_FLAGS})
 install(TARGETS cct
   RUNTIME DESTINATION ${INSTALL_BIN_DIR})
 
-if(MSVC AND BUILD_LIBPROJ_SHARED)
+if(MSVC AND BUILD_SHARED_LIBS)
   target_compile_definitions(cct PRIVATE PROJ_MSVC_DLL_IMPORT=1)
 endif()
 

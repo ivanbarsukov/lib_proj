@@ -1,9 +1,11 @@
 #
 # files containing dictionary of useful projection
 #
+set(CONFIG_FILES
+  proj.ini
+)
 
 set(PROJ_DICTIONARY
-  null
   world
   other.extra
   nad27
@@ -79,6 +81,7 @@ endif()
 #install
 #
 set(ALL_DATA_FILE
+  ${CONFIG_FILES}
   ${PROJ_DICTIONARY}
   ${GRIDSHIFT_FILES}
   ${PROJ_DB}

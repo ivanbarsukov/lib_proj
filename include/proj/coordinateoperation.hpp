@@ -116,7 +116,8 @@ using CoordinateOperationNNPtr = util::nn<CoordinateOperationPtr>;
  * \remark Implements CoordinateOperation from \ref ISO_19111_2019
  */
 class PROJ_GCC_DLL CoordinateOperation : public common::ObjectUsage,
-                                         public io::IPROJStringExportable {
+                                         public io::IPROJStringExportable,
+                                         public io::IJSONExportable {
   public:
     //! @cond Doxygen_Suppress
     PROJ_DLL ~CoordinateOperation() override;
@@ -143,10 +144,12 @@ class PROJ_GCC_DLL CoordinateOperation : public common::ObjectUsage,
 
     /** \brief Return grids needed by an operation. */
     PROJ_DLL virtual std::set<GridDescription>
-    gridsNeeded(const io::DatabaseContextPtr &databaseContext) const = 0;
+    gridsNeeded(const io::DatabaseContextPtr &databaseContext,
+                bool considerKnownGridsAsAvailable) const = 0;
 
     PROJ_DLL bool
-    isPROJInstantiable(const io::DatabaseContextPtr &databaseContext) const;
+    isPROJInstantiable(const io::DatabaseContextPtr &databaseContext,
+                       bool considerKnownGridsAsAvailable) const;
 
     PROJ_DLL bool hasBallparkTransformation() const;
 
@@ -209,7 +212,8 @@ class PROJ_GCC_DLL GeneralOperationParameter : public common::IdentifiedObject {
     PROJ_INTERNAL bool _isEquivalentTo(
         const util::IComparable *other,
         util::IComparable::Criterion criterion =
-            util::IComparable::Criterion::STRICT) const override = 0;
+            util::IComparable::Criterion::STRICT,
+        const io::DatabaseContextPtr &dbContext = nullptr) const override = 0;
     //! @endcond
 
   protected:
@@ -250,10 +254,11 @@ class PROJ_GCC_DLL OperationParameter final : public GeneralOperationParameter {
     //! @endcond
 
     //! @cond Doxygen_Suppress
-    PROJ_INTERNAL bool
-    _isEquivalentTo(const util::IComparable *other,
-                    util::IComparable::Criterion criterion =
-                        util::IComparable::Criterion::STRICT) const override;
+    PROJ_INTERNAL bool _isEquivalentTo(
+        const util::IComparable *other,
+        util::IComparable::Criterion criterion =
+            util::IComparable::Criterion::STRICT,
+        const io::DatabaseContextPtr &dbContext = nullptr) const override;
     //! @endcond
 
     // non-standard
@@ -291,6 +296,7 @@ struct MethodMapping;
  */
 class PROJ_GCC_DLL GeneralParameterValue : public util::BaseObject,
                                            public io::IWKTExportable,
+                                           public io::IJSONExportable,
                                            public util::IComparable {
   public:
     //! @cond Doxygen_Suppress
@@ -299,10 +305,14 @@ class PROJ_GCC_DLL GeneralParameterValue : public util::BaseObject,
     PROJ_INTERNAL void _exportToWKT(io::WKTFormatter *formatter)
         const override = 0; // throw(io::FormattingException)
 
+    PROJ_INTERNAL void _exportToJSON(io::JSONFormatter *formatter)
+        const override = 0; // throw(FormattingException)
+
     PROJ_INTERNAL bool _isEquivalentTo(
         const util::IComparable *other,
         util::IComparable::Criterion criterion =
-            util::IComparable::Criterion::STRICT) const override = 0;
+            util::IComparable::Criterion::STRICT,
+        const io::DatabaseContextPtr &dbContext = nullptr) const override = 0;
     //! @endcond
 
   protected:
@@ -385,10 +395,11 @@ class PROJ_GCC_DLL ParameterValue final : public util::BaseObject,
     PROJ_DLL bool booleanValue() PROJ_PURE_DECL;
 
     //! @cond Doxygen_Suppress
-    PROJ_INTERNAL bool
-    _isEquivalentTo(const util::IComparable *other,
-                    util::IComparable::Criterion criterion =
-                        util::IComparable::Criterion::STRICT) const override;
+    PROJ_INTERNAL bool _isEquivalentTo(
+        const util::IComparable *other,
+        util::IComparable::Criterion criterion =
+            util::IComparable::Criterion::STRICT,
+        const io::DatabaseContextPtr &dbContext = nullptr) const override;
     //! @endcond
 
   protected:
@@ -442,10 +453,14 @@ class PROJ_GCC_DLL OperationParameterValue final
     PROJ_INTERNAL void _exportToWKT(io::WKTFormatter *formatter)
         const override; // throw(io::FormattingException)
 
-    PROJ_INTERNAL bool
-    _isEquivalentTo(const util::IComparable *other,
-                    util::IComparable::Criterion criterion =
-                        util::IComparable::Criterion::STRICT) const override;
+    PROJ_INTERNAL void _exportToJSON(io::JSONFormatter *formatter)
+        const override; // throw(FormattingException)
+
+    PROJ_INTERNAL bool _isEquivalentTo(
+        const util::IComparable *other,
+        util::IComparable::Criterion criterion =
+            util::IComparable::Criterion::STRICT,
+        const io::DatabaseContextPtr &dbContext = nullptr) const override;
     //! @endcond
 
   protected:
@@ -481,7 +496,8 @@ using OperationMethodNNPtr = util::nn<OperationMethodPtr>;
  *
  * \remark Implements OperationMethod from \ref ISO_19111_2019
  */
-class PROJ_GCC_DLL OperationMethod : public common::IdentifiedObject {
+class PROJ_GCC_DLL OperationMethod : public common::IdentifiedObject,
+                                     public io::IJSONExportable {
   public:
     //! @cond Doxygen_Suppress
     PROJ_DLL ~OperationMethod() override;
@@ -507,10 +523,14 @@ class PROJ_GCC_DLL OperationMethod : public common::IdentifiedObject {
     PROJ_INTERNAL void _exportToWKT(io::WKTFormatter *formatter)
         const override; // throw(io::FormattingException)
 
-    PROJ_INTERNAL bool
-    _isEquivalentTo(const util::IComparable *other,
-                    util::IComparable::Criterion criterion =
-                        util::IComparable::Criterion::STRICT) const override;
+    PROJ_INTERNAL void _exportToJSON(io::JSONFormatter *formatter)
+        const override; // throw(FormattingException)
+
+    PROJ_INTERNAL bool _isEquivalentTo(
+        const util::IComparable *other,
+        util::IComparable::Criterion criterion =
+            util::IComparable::Criterion::STRICT,
+        const io::DatabaseContextPtr &dbContext = nullptr) const override;
     //! @endcond
 
   protected:
@@ -583,7 +603,8 @@ class PROJ_GCC_DLL SingleOperation : virtual public CoordinateOperation {
             std::vector<metadata::PositionalAccuracyNNPtr>());
 
     PROJ_DLL std::set<GridDescription>
-    gridsNeeded(const io::DatabaseContextPtr &databaseContext) const override;
+    gridsNeeded(const io::DatabaseContextPtr &databaseContext,
+                bool considerKnownGridsAsAvailable) const override;
 
     PROJ_DLL std::list<std::string> validateParameters() const;
 
@@ -595,13 +616,19 @@ class PROJ_GCC_DLL SingleOperation : virtual public CoordinateOperation {
                               const common::UnitOfMeasure &targetUnit) const
         noexcept;
 
+    PROJ_INTERNAL double
+    parameterValueNumeric(const char *param_name,
+                          const common::UnitOfMeasure &targetUnit) const
+        noexcept;
+
     PROJ_INTERNAL double parameterValueNumericAsSI(int epsg_code) const
         noexcept;
 
-    PROJ_INTERNAL bool
-    _isEquivalentTo(const util::IComparable *other,
-                    util::IComparable::Criterion criterion =
-                        util::IComparable::Criterion::STRICT) const override;
+    PROJ_INTERNAL bool _isEquivalentTo(
+        const util::IComparable *other,
+        util::IComparable::Criterion criterion =
+            util::IComparable::Criterion::STRICT,
+        const io::DatabaseContextPtr &dbContext = nullptr) const override;
     //! @endcond
 
   protected:
@@ -620,6 +647,7 @@ class PROJ_GCC_DLL SingleOperation : virtual public CoordinateOperation {
 
     PROJ_INTERNAL bool _isEquivalentTo(const util::IComparable *other,
                                        util::IComparable::Criterion criterion,
+                                       const io::DatabaseContextPtr &dbContext,
                                        bool inOtherDirection) const;
 
   private:
@@ -1299,8 +1327,26 @@ class PROJ_GCC_DLL Conversion : public SingleOperation {
                      const common::Length &falseNorthing);
 
     PROJ_DLL static ConversionNNPtr
+    createVerticalPerspective(const util::PropertyMap &properties,
+                              const common::Angle &topoOriginLat,
+                              const common::Angle &topoOriginLong,
+                              const common::Length &topoOriginHeight,
+                              const common::Length &viewPointHeight,
+                              const common::Length &falseEasting,
+                              const common::Length &falseNorthing);
+
+    PROJ_DLL static ConversionNNPtr createPoleRotationGRIBConvention(
+        const util::PropertyMap &properties,
+        const common::Angle &southPoleLatInUnrotatedCRS,
+        const common::Angle &southPoleLongInUnrotatedCRS,
+        const common::Angle &axisRotation);
+
+    PROJ_DLL static ConversionNNPtr
     createChangeVerticalUnit(const util::PropertyMap &properties,
                              const common::Scale &factor);
+
+    PROJ_DLL static ConversionNNPtr
+    createHeightDepthReversal(const util::PropertyMap &properties);
 
     PROJ_DLL static ConversionNNPtr createAxisOrderReversal(bool is3D);
 
@@ -1315,6 +1361,9 @@ class PROJ_GCC_DLL Conversion : public SingleOperation {
         _exportToPROJString(io::PROJStringFormatter *formatter)
             const override; // throw(FormattingException)
 
+    PROJ_INTERNAL void _exportToJSON(io::JSONFormatter *formatter)
+        const override; // throw(FormattingException)
+
     PROJ_INTERNAL const char *getESRIMethodName() const;
 
     PROJ_INTERNAL const char *getWKT1GDALMethodName() const;
@@ -1323,6 +1372,10 @@ class PROJ_GCC_DLL Conversion : public SingleOperation {
 
     PROJ_INTERNAL ConversionNNPtr alterParametersLinearUnit(
         const common::UnitOfMeasure &unit, bool convertToNewUnit) const;
+
+    PROJ_INTERNAL static ConversionNNPtr
+    createGeographicGeocentric(const crs::CRSNNPtr &sourceCRS,
+                               const crs::CRSNNPtr &targetCRS);
 
     //! @endcond
 
@@ -1535,6 +1588,9 @@ class PROJ_GCC_DLL Transformation : public SingleOperation {
     PROJ_INTERNAL void _exportToWKT(io::WKTFormatter *formatter)
         const override; // throw(io::FormattingException)
 
+    PROJ_INTERNAL void _exportToJSON(io::JSONFormatter *formatter)
+        const override; // throw(FormattingException)
+
     PROJ_INTERNAL TransformationNNPtr shallowClone() const;
 
     //! @endcond
@@ -1552,6 +1608,7 @@ class PROJ_GCC_DLL Transformation : public SingleOperation {
     PROJ_INTERNAL void _exportToPROJString(io::PROJStringFormatter *formatter)
         const override; // throw(FormattingException)
 
+    PROJ_FRIEND(CoordinateOperationFactory);
     PROJ_INTERNAL TransformationNNPtr inverseAsTransformation() const;
 
     PROJ_INTERNAL CoordinateOperationNNPtr _shallowClone() const override;
@@ -1626,7 +1683,8 @@ class PROJ_GCC_DLL ConcatenatedOperation final : public CoordinateOperation {
         bool checkExtent); // throw InvalidOperation
 
     PROJ_DLL std::set<GridDescription>
-    gridsNeeded(const io::DatabaseContextPtr &databaseContext) const override;
+    gridsNeeded(const io::DatabaseContextPtr &databaseContext,
+                bool considerKnownGridsAsAvailable) const override;
 
     PROJ_PRIVATE :
 
@@ -1635,10 +1693,14 @@ class PROJ_GCC_DLL ConcatenatedOperation final : public CoordinateOperation {
         _exportToWKT(io::WKTFormatter *formatter)
             const override; // throw(io::FormattingException)
 
-    PROJ_INTERNAL bool
-    _isEquivalentTo(const util::IComparable *other,
-                    util::IComparable::Criterion criterion =
-                        util::IComparable::Criterion::STRICT) const override;
+    PROJ_INTERNAL bool _isEquivalentTo(
+        const util::IComparable *other,
+        util::IComparable::Criterion criterion =
+            util::IComparable::Criterion::STRICT,
+        const io::DatabaseContextPtr &dbContext = nullptr) const override;
+
+    PROJ_INTERNAL void _exportToJSON(io::JSONFormatter *formatter)
+        const override; // throw(FormattingException)
 
     PROJ_INTERNAL static void
     fixStepsDirection(const crs::CRSNNPtr &concatOpSourceCRS,
@@ -1752,6 +1814,12 @@ class PROJ_GCC_DLL CoordinateOperationContext {
         /** Ignore grid availability at all. Results will be presented as if
          * all grids were available. */
         IGNORE_GRID_AVAILABILITY,
+
+        /** Results will be presented as if grids known to PROJ (that is
+        * registered in the grid_alternatives table of its database) were
+        * available. Used typically when networking is enabled.
+        */
+        KNOWN_AVAILABLE,
     };
 
     PROJ_DLL void setGridAvailabilityUse(GridAvailabilityUse use);

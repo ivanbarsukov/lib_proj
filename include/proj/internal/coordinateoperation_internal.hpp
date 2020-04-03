@@ -118,10 +118,11 @@ class InverseCoordinateOperation : virtual public CoordinateOperation {
     void _exportToPROJString(io::PROJStringFormatter *formatter)
         const override; // throw(FormattingException)
 
-    bool
-    _isEquivalentTo(const util::IComparable *other,
-                    util::IComparable::Criterion criterion =
-                        util::IComparable::Criterion::STRICT) const override;
+    bool _isEquivalentTo(
+        const util::IComparable *other,
+        util::IComparable::Criterion criterion =
+            util::IComparable::Criterion::STRICT,
+        const io::DatabaseContextPtr &dbContext = nullptr) const override;
 
     CoordinateOperationNNPtr inverse() const override;
 
@@ -149,16 +150,22 @@ class InverseConversion : public Conversion, public InverseCoordinateOperation {
         Conversion::_exportToWKT(formatter);
     }
 
+    void _exportToJSON(io::JSONFormatter *formatter) const override {
+        Conversion::_exportToJSON(formatter);
+    }
+
     void
     _exportToPROJString(io::PROJStringFormatter *formatter) const override {
         InverseCoordinateOperation::_exportToPROJString(formatter);
     }
 
-    bool
-    _isEquivalentTo(const util::IComparable *other,
-                    util::IComparable::Criterion criterion =
-                        util::IComparable::Criterion::STRICT) const override {
-        return InverseCoordinateOperation::_isEquivalentTo(other, criterion);
+    bool _isEquivalentTo(
+        const util::IComparable *other,
+        util::IComparable::Criterion criterion =
+            util::IComparable::Criterion::STRICT,
+        const io::DatabaseContextPtr &dbContext = nullptr) const override {
+        return InverseCoordinateOperation::_isEquivalentTo(other, criterion,
+                                                           dbContext);
     }
 
     CoordinateOperationNNPtr inverse() const override {
@@ -173,8 +180,10 @@ class InverseConversion : public Conversion, public InverseCoordinateOperation {
     // 'osgeo::proj::operation::SingleOperation::osgeo::proj::operation::SingleOperation::gridsNeeded'
     // via dominance
     std::set<GridDescription>
-    gridsNeeded(const io::DatabaseContextPtr &databaseContext) const override {
-        return SingleOperation::gridsNeeded(databaseContext);
+    gridsNeeded(const io::DatabaseContextPtr &databaseContext,
+                bool considerKnownGridsAsAvailable) const override {
+        return SingleOperation::gridsNeeded(databaseContext,
+                                            considerKnownGridsAsAvailable);
     }
 #endif
 
@@ -200,11 +209,17 @@ class InverseTransformation : public Transformation,
         return InverseCoordinateOperation::_exportToPROJString(formatter);
     }
 
-    bool
-    _isEquivalentTo(const util::IComparable *other,
-                    util::IComparable::Criterion criterion =
-                        util::IComparable::Criterion::STRICT) const override {
-        return InverseCoordinateOperation::_isEquivalentTo(other, criterion);
+    void _exportToJSON(io::JSONFormatter *formatter) const override {
+        Transformation::_exportToJSON(formatter);
+    }
+
+    bool _isEquivalentTo(
+        const util::IComparable *other,
+        util::IComparable::Criterion criterion =
+            util::IComparable::Criterion::STRICT,
+        const io::DatabaseContextPtr &dbContext = nullptr) const override {
+        return InverseCoordinateOperation::_isEquivalentTo(other, criterion,
+                                                           dbContext);
     }
 
     CoordinateOperationNNPtr inverse() const override {
@@ -219,8 +234,10 @@ class InverseTransformation : public Transformation,
     // 'osgeo::proj::operation::SingleOperation::osgeo::proj::operation::SingleOperation::gridsNeeded'
     // via dominance
     std::set<GridDescription>
-    gridsNeeded(const io::DatabaseContextPtr &databaseContext) const override {
-        return SingleOperation::gridsNeeded(databaseContext);
+    gridsNeeded(const io::DatabaseContextPtr &databaseContext,
+                bool considerKnownGridsAsAvailable) const override {
+        return SingleOperation::gridsNeeded(databaseContext,
+                                            considerKnownGridsAsAvailable);
     }
 #endif
 
@@ -261,13 +278,17 @@ class PROJBasedOperation : public SingleOperation {
            bool hasRoughTransformation);
 
     std::set<GridDescription>
-    gridsNeeded(const io::DatabaseContextPtr &databaseContext) const override;
+    gridsNeeded(const io::DatabaseContextPtr &databaseContext,
+                bool considerKnownGridsAsAvailable) const override;
 
   protected:
     PROJBasedOperation(const PROJBasedOperation &) = default;
     explicit PROJBasedOperation(const OperationMethodNNPtr &methodIn);
 
     void _exportToPROJString(io::PROJStringFormatter *formatter)
+        const override; // throw(FormattingException)
+
+    void _exportToJSON(io::JSONFormatter *formatter)
         const override; // throw(FormattingException)
 
     CoordinateOperationNNPtr _shallowClone() const override;

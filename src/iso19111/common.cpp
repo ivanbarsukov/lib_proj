@@ -236,6 +236,55 @@ void UnitOfMeasure::_exportToWKT(
     }
     formatter->endNode();
 }
+
+// ---------------------------------------------------------------------------
+
+void UnitOfMeasure::_exportToJSON(
+    JSONFormatter *formatter) const // throw(FormattingException)
+{
+    auto &writer = formatter->writer();
+    const auto &l_codeSpace = codeSpace();
+    auto objContext(
+        formatter->MakeObjectContext(nullptr, !l_codeSpace.empty()));
+    writer.AddObjKey("type");
+    const auto l_type = type();
+    if (l_type == Type::LINEAR) {
+        writer.Add("LinearUnit");
+    } else if (l_type == Type::ANGULAR) {
+        writer.Add("AngularUnit");
+    } else if (l_type == Type::SCALE) {
+        writer.Add("ScaleUnit");
+    } else if (l_type == Type::TIME) {
+        writer.Add("TimeUnit");
+    } else if (l_type == Type::PARAMETRIC) {
+        writer.Add("ParametricUnit");
+    } else {
+        writer.Add("Unit");
+    }
+
+    writer.AddObjKey("name");
+    const auto &l_name = name();
+    writer.Add(l_name);
+
+    const auto &factor = conversionToSI();
+    writer.AddObjKey("conversion_factor");
+    writer.Add(factor, 15);
+
+    if (!l_codeSpace.empty() && formatter->outputId()) {
+        writer.AddObjKey("id");
+        auto idContext(formatter->MakeObjectContext(nullptr, false));
+        writer.AddObjKey("authority");
+        writer.Add(l_codeSpace);
+        writer.AddObjKey("code");
+        const auto &l_code = code();
+        try {
+            writer.Add(std::stoi(l_code));
+        } catch (const std::exception &) {
+            writer.Add(l_code);
+        }
+    }
+}
+
 //! @endcond
 
 // ---------------------------------------------------------------------------
@@ -498,6 +547,15 @@ DateTime::DateTime(const std::string &str)
 //! @cond Doxygen_Suppress
 DateTime::DateTime(const DateTime &other)
     : d(internal::make_unique<Private>(*(other.d))) {}
+//! @endcond
+
+// ---------------------------------------------------------------------------
+
+//! @cond Doxygen_Suppress
+DateTime &DateTime::operator=(const DateTime &other) {
+    d->str_ = other.d->str_;
+    return *this;
+}
 //! @endcond
 
 // ---------------------------------------------------------------------------
@@ -815,20 +873,47 @@ void IdentifiedObject::formatRemarks(WKTFormatter *formatter) const {
 
 // ---------------------------------------------------------------------------
 
-bool IdentifiedObject::_isEquivalentTo(
-    const util::IComparable *other,
-    util::IComparable::Criterion criterion) const {
-    auto otherIdObj = dynamic_cast<const IdentifiedObject *>(other);
-    if (!otherIdObj)
-        return false;
-    return _isEquivalentTo(otherIdObj, criterion);
+void IdentifiedObject::formatID(JSONFormatter *formatter) const {
+    const auto &ids(identifiers());
+    auto &writer = formatter->writer();
+    if (ids.size() == 1) {
+        writer.AddObjKey("id");
+        ids.front()->_exportToJSON(formatter);
+    } else if (!ids.empty()) {
+        writer.AddObjKey("ids");
+        auto arrayContext(writer.MakeArrayContext());
+        for (const auto &id : ids) {
+            id->_exportToJSON(formatter);
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
 
-bool IdentifiedObject::_isEquivalentTo(const IdentifiedObject *otherIdObj,
-                                       util::IComparable::Criterion criterion)
-    PROJ_PURE_DEFN {
+void IdentifiedObject::formatRemarks(JSONFormatter *formatter) const {
+    if (!remarks().empty()) {
+        auto &writer = formatter->writer();
+        writer.AddObjKey("remarks");
+        writer.Add(remarks());
+    }
+}
+
+// ---------------------------------------------------------------------------
+
+bool IdentifiedObject::_isEquivalentTo(
+    const util::IComparable *other, util::IComparable::Criterion criterion,
+    const io::DatabaseContextPtr &dbContext) const {
+    auto otherIdObj = dynamic_cast<const IdentifiedObject *>(other);
+    if (!otherIdObj)
+        return false;
+    return _isEquivalentTo(otherIdObj, criterion, dbContext);
+}
+
+// ---------------------------------------------------------------------------
+
+bool IdentifiedObject::_isEquivalentTo(
+    const IdentifiedObject *otherIdObj, util::IComparable::Criterion criterion,
+    const io::DatabaseContextPtr &dbContext) PROJ_PURE_DEFN {
     if (criterion == util::IComparable::Criterion::STRICT) {
         if (!ci_equal(nameStr(), otherIdObj->nameStr())) {
             return false;
@@ -837,10 +922,17 @@ bool IdentifiedObject::_isEquivalentTo(const IdentifiedObject *otherIdObj,
     } else {
         if (!metadata::Identifier::isEquivalentName(
                 nameStr().c_str(), otherIdObj->nameStr().c_str())) {
-            return false;
+            return hasEquivalentNameToUsingAlias(otherIdObj, dbContext);
         }
     }
     return true;
+}
+
+// ---------------------------------------------------------------------------
+
+bool IdentifiedObject::hasEquivalentNameToUsingAlias(
+    const IdentifiedObject *, const io::DatabaseContextPtr &) const {
+    return false;
 }
 
 //! @endcond
@@ -913,7 +1005,7 @@ void ObjectDomain::_exportToWKT(WKTFormatter *formatter) const {
         formatter->startNode(WKTConstants::SCOPE, false);
         formatter->addQuotedString(*(d->scope_));
         formatter->endNode();
-    } else if (formatter->use2018Keywords()) {
+    } else if (formatter->use2019Keywords()) {
         formatter->startNode(WKTConstants::SCOPE, false);
         formatter->addQuotedString("unknown");
         formatter->endNode();
@@ -966,9 +1058,49 @@ void ObjectDomain::_exportToWKT(WKTFormatter *formatter) const {
 // ---------------------------------------------------------------------------
 
 //! @cond Doxygen_Suppress
+void ObjectDomain::_exportToJSON(JSONFormatter *formatter) const {
+    auto &writer = formatter->writer();
+    if (d->scope_.has_value()) {
+        writer.AddObjKey("scope");
+        writer.Add(*(d->scope_));
+    }
+    if (d->domainOfValidity_) {
+        if (d->domainOfValidity_->description().has_value()) {
+            writer.AddObjKey("area");
+            writer.Add(*(d->domainOfValidity_->description()));
+        }
+        if (d->domainOfValidity_->geographicElements().size() == 1) {
+            const auto bbox = dynamic_cast<const GeographicBoundingBox *>(
+                d->domainOfValidity_->geographicElements()[0].get());
+            if (bbox) {
+                writer.AddObjKey("bbox");
+                auto bboxContext(writer.MakeObjectContext());
+                writer.AddObjKey("south_latitude");
+                writer.Add(bbox->southBoundLatitude(), 15);
+                writer.AddObjKey("west_longitude");
+                writer.Add(bbox->westBoundLongitude(), 15);
+                writer.AddObjKey("north_latitude");
+                writer.Add(bbox->northBoundLatitude(), 15);
+                writer.AddObjKey("east_longitude");
+                writer.Add(bbox->eastBoundLongitude(), 15);
+            }
+        }
+        if (d->domainOfValidity_->verticalElements().size() == 1) {
+            // TODO
+        }
+        if (d->domainOfValidity_->temporalElements().size() == 1) {
+            // TODO
+        }
+    }
+}
+//! @endcond
+
+// ---------------------------------------------------------------------------
+
+//! @cond Doxygen_Suppress
 bool ObjectDomain::_isEquivalentTo(
-    const util::IComparable *other,
-    util::IComparable::Criterion criterion) const {
+    const util::IComparable *other, util::IComparable::Criterion criterion,
+    const io::DatabaseContextPtr &dbContext) const {
     auto otherDomain = dynamic_cast<const ObjectDomain *>(other);
     if (!otherDomain)
         return false;
@@ -981,7 +1113,7 @@ bool ObjectDomain::_isEquivalentTo(
         return false;
     return domainOfValidity().get() == nullptr ||
            domainOfValidity()->_isEquivalentTo(
-               otherDomain->domainOfValidity().get(), criterion);
+               otherDomain->domainOfValidity().get(), criterion, dbContext);
 }
 //! @endcond
 
@@ -1076,7 +1208,7 @@ void ObjectUsage::baseExportToWKT(WKTFormatter *formatter) const {
     if (isWKT2 && formatter->outputUsage()) {
         auto l_domains = domains();
         if (!l_domains.empty()) {
-            if (formatter->use2018Keywords()) {
+            if (formatter->use2019Keywords()) {
                 for (const auto &domain : l_domains) {
                     formatter->startNode(WKTConstants::USAGE, false);
                     domain->_exportToWKT(formatter);
@@ -1097,16 +1229,41 @@ void ObjectUsage::baseExportToWKT(WKTFormatter *formatter) const {
 
 // ---------------------------------------------------------------------------
 
+void ObjectUsage::baseExportToJSON(JSONFormatter *formatter) const {
+
+    auto &writer = formatter->writer();
+    if (formatter->outputUsage()) {
+        const auto &l_domains = domains();
+        if (l_domains.size() == 1) {
+            l_domains[0]->_exportToJSON(formatter);
+        } else if (!l_domains.empty()) {
+            writer.AddObjKey("usages");
+            auto arrayContext(writer.MakeArrayContext(false));
+            for (const auto &domain : l_domains) {
+                auto objContext(writer.MakeObjectContext());
+                domain->_exportToJSON(formatter);
+            }
+        }
+    }
+
+    if (formatter->outputId()) {
+        formatID(formatter);
+    }
+    formatRemarks(formatter);
+}
+
+// ---------------------------------------------------------------------------
+
 //! @cond Doxygen_Suppress
 bool ObjectUsage::_isEquivalentTo(
-    const util::IComparable *other,
-    util::IComparable::Criterion criterion) const {
+    const util::IComparable *other, util::IComparable::Criterion criterion,
+    const io::DatabaseContextPtr &dbContext) const {
     auto otherObjUsage = dynamic_cast<const ObjectUsage *>(other);
     if (!otherObjUsage)
         return false;
 
     // TODO: incomplete
-    return IdentifiedObject::_isEquivalentTo(other, criterion);
+    return IdentifiedObject::_isEquivalentTo(other, criterion, dbContext);
 }
 //! @endcond
 

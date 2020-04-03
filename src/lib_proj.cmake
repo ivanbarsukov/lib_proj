@@ -35,36 +35,13 @@ elseif(USE_THREAD AND NOT Threads_FOUND)
     "required by USE_THREAD option")
 endif()
 
-option(ENABLE_LTO
-  "Build library with LTO/IPO optimization (if available)." OFF)
-if(ENABLE_LTO)
-  # Determine ENABLE_LTO_METHOD to either "flag" or "property"
-  if(CMAKE_C_COMPILER_ID STREQUAL "Intel"
-      AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
-    set(ENABLE_LTO_METHOD "property")
-  elseif(CMAKE_VERSION VERSION_LESS 3.9)
-    # Maual checks required
-    if(CMAKE_C_COMPILER_ID STREQUAL "Clang")
-      include(CheckCXXSourceCompiles)
-      set(CMAKE_REQUIRED_FLAGS "-Wl,-flto")
-      check_cxx_source_compiles("int main(){ return 0; }"
-        COMPILER_SUPPORTS_FLTO_FLAG)
-    else()
-      include(CheckCXXCompilerFlag)
-      check_cxx_compiler_flag("-flto" COMPILER_SUPPORTS_FLTO_FLAG)
-    endif()
-    set(ENABLE_LTO_METHOD "flag")
-    if(NOT COMPILER_SUPPORTS_FLTO_FLAG)
-      set(ENABLE_LTO OFF)
-    endif()
-  else()  # CMake v3.9
-    cmake_policy(SET CMP0069 NEW)
-    include(CheckIPOSupported)
-    check_ipo_supported(RESULT ENABLE_LTO)
-    set(ENABLE_LTO_METHOD "property")
-  endif()
+option(ENABLE_IPO
+  "Build library with interprocedural optimization (if available)." OFF)
+if(ENABLE_IPO)
+  cmake_policy(SET CMP0069 NEW)
+  include(CheckIPOSupported)
+  check_ipo_supported(RESULT ENABLE_IPO)
 endif()
-# boost_report_value(ENABLE_LTO)
 
 
 ##############################################
@@ -187,6 +164,7 @@ set(SRC_LIBPROJ_CONVERSIONS
   conversions/geoc.cpp
   conversions/geocent.cpp
   conversions/noop.cpp
+  conversions/set.cpp
   conversions/unitconvert.cpp
 )
 
@@ -198,6 +176,7 @@ set(SRC_LIBPROJ_TRANSFORMATIONS
   transformations/horner.cpp
   transformations/molodensky.cpp
   transformations/vgridshift.cpp
+  transformations/xyzgridshift.cpp
 )
 
 set(SRC_LIBPROJ_ISO19111
@@ -219,8 +198,6 @@ set(SRC_LIBPROJ_CORE
   4D_api.cpp
   aasincos.cpp
   adjlon.cpp
-  apply_gridshift.cpp
-  apply_vgridshift.cpp
   auth.cpp
   ctx.cpp
   datum_set.cpp
@@ -234,36 +211,25 @@ set(SRC_LIBPROJ_CORE
   fileapi.cpp
   fwd.cpp
   gauss.cpp
-  gc_reader.cpp
   geocent.cpp
   geocent.h
   geodesic.c
-  gridcatalog.cpp
-  gridinfo.cpp
-  gridlist.cpp
   init.cpp
   initcache.cpp
   internal.cpp
   inv.cpp
-  jniproj.cpp
   list.cpp
   log.cpp
   malloc.cpp
-  math.cpp
   mlfn.cpp
   msfn.cpp
   mutex.cpp
-  nad_cvt.cpp
-  nad_init.cpp
-  nad_intr.cpp
-  open_lib.cpp
   param.cpp
   phi2.cpp
   pipeline.cpp
   pj_list.h
   pr_list.cpp
   proj_internal.h
-  proj_math.h
   proj_mdist.cpp
   qsfn.cpp
   release.cpp
@@ -285,6 +251,16 @@ set(SRC_LIBPROJ_CORE
   wkt_parser.cpp
   wkt_parser.hpp
   zpoly1.cpp
+  proj_json_streaming_writer.hpp
+  proj_json_streaming_writer.cpp
+  tracing.cpp
+  grids.hpp
+  grids.cpp
+  filemanager.hpp
+  filemanager.cpp
+  networkfilemanager.cpp
+  sqlite3_utils.hpp
+  sqlite3_utils.cpp
   ${CMAKE_CURRENT_BINARY_DIR}/proj_config.h
 )
 
@@ -294,7 +270,6 @@ set(HEADERS_LIBPROJ
   proj_experimental.h
   proj_constants.h
   geodesic.h
-  proj_symbol_rename.h
 )
 
 # Group source files for IDE source explorers (e.g. Visual Studio)
@@ -330,26 +305,6 @@ set(HEADERS_PUBLIC
 
 # Embed PROJ_LIB data files location
 add_definitions(-DPROJ_LIB="${CMAKE_INSTALL_PREFIX}/${INSTALL_DATA_DIR}")
-
-#################################################
-## java wrapping with jni
-#################################################
-option(JNI_SUPPORT "Build support of java/jni wrapping for proj library" OFF)
-find_package(JNI QUIET)
-if(JNI_SUPPORT AND NOT JNI_FOUND)
-  message(FATAL_ERROR "jni support is required but jni is not found")
-endif()
-# boost_report_value(JNI_SUPPORT)
-if(JNI_SUPPORT)
-  set(SRC_LIBPROJ_CORE
-    ${SRC_LIBPROJ_CORE} jniproj.cpp)
-  set(HEADERS_LIBPROJ
-    ${HEADERS_LIBPROJ} org_proj4_PJ.h)
-  source_group("Source Files\\JNI" FILES ${SRC_LIBPROJ_JNI})
-  add_definitions(-DJNI_ENABLED)
-  include_directories(${JNI_INCLUDE_DIRS})
-  # boost_report_value(JNI_INCLUDE_DIRS)
-endif()
 
 #################################################
 ## targets: libproj and proj_config.h
@@ -422,20 +377,13 @@ if("${CMAKE_C_COMPILER_ID}" STREQUAL "Intel")
     PROPERTIES COMPILE_FLAGS ${FP_PRECISE})
 endif()
 
-if(ENABLE_LTO)
-  if(ENABLE_LTO_METHOD STREQUAL "property")
-    set_property(TARGET ${PROJ_CORE_TARGET}
-      PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE)
-  elseif(ENABLE_LTO_METHOD STREQUAL "flag")
-    # pre-CMake 3.9 workaround
-    target_compile_options(${PROJ_CORE_TARGET} PRIVATE -flto)
-  endif()
+if(ENABLE_IPO)
+  set_property(TARGET ${PROJ_CORE_TARGET}
+    PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE)
 endif()
 
-if(NOT CMAKE_VERSION VERSION_LESS 2.8.11)
-  target_include_directories(${PROJ_CORE_TARGET} INTERFACE
-    $<INSTALL_INTERFACE:${INCLUDEDIR}>)
-endif()
+target_include_directories(${PROJ_CORE_TARGET} INTERFACE
+  $<INSTALL_INTERFACE:${INCLUDEDIR}>)
 
 if(WIN32)
   set_target_properties(${PROJ_CORE_TARGET}
@@ -473,6 +421,11 @@ if(UNIX)
     set(TARGET_LINK_LIB ${TARGET_LINK_LIB} m)
     # target_link_libraries(${PROJ_CORE_TARGET} -lm)
   endif()
+  find_library(DL_LIB dl)
+  if(M_LIB)
+  set(TARGET_LINK_LIB ${TARGET_LINK_LIB} dl)
+  # target_link_libraries(${PROJ_CORE_TARGET} -ldl)
+  endif()
 endif()
 if(USE_THREAD AND Threads_FOUND AND CMAKE_USE_PTHREADS_INIT)
   set(TARGET_LINK_LIB ${TARGET_LINK_LIB} ${CMAKE_THREAD_LIBS_INIT})
@@ -482,9 +435,26 @@ endif()
 # include_directories(${SQLITE3_INCLUDE_DIR})
 # target_link_libraries(${PROJ_CORE_TARGET} ${SQLITE3_LIBRARY})
 
-if(MSVC)
-  target_compile_definitions(${PROJ_CORE_TARGET} PRIVATE PROJ_MSVC_DLL_EXPORT=1)
-  target_compile_definitions(${PROJ_CORE_TARGET} INTERFACE PROJ_MSVC_DLL_IMPORT)
+# if(TIFF_ENABLED)
+#   target_compile_definitions(${PROJ_CORE_TARGET} PRIVATE -DTIFF_ENABLED)
+#   target_include_directories(${PROJ_CORE_TARGET} PRIVATE ${TIFF_INCLUDE_DIR})
+#   target_link_libraries(${PROJ_CORE_TARGET} ${TIFF_LIBRARY})
+# endif()
+
+# if(CURL_ENABLED)
+#   target_compile_definitions(${PROJ_CORE_TARGET} PRIVATE -DCURL_ENABLED)
+#   target_include_directories(${PROJ_CORE_TARGET} PRIVATE ${CURL_INCLUDE_DIR})
+#   target_link_libraries(${PROJ_CORE_TARGET} ${CURL_LIBRARY})
+# endif()
+
+# if(MSVC)
+#   target_compile_definitions(${PROJ_CORE_TARGET} PRIVATE PROJ_MSVC_DLL_EXPORT=1)
+#   target_compile_definitions(${PROJ_CORE_TARGET} INTERFACE PROJ_MSVC_DLL_IMPORT)
+# endif()
+
+if(MSVC AND BUILD_SHARED_LIBS)
+  target_compile_definitions(${PROJ_CORE_TARGET}
+    PRIVATE PROJ_MSVC_DLL_EXPORT=1)
 endif()
 
 target_link_extlibraries(${PROJ_CORE_TARGET})
@@ -516,6 +486,9 @@ endif()
 
 if(NOT SKIP_INSTALL_HEADERS AND NOT SKIP_INSTALL_ALL )
   install(FILES ${ALL_LIBPROJ_HEADERS} DESTINATION ${INSTALL_INC_DIR})
+  if(UNIX AND NOT OSX_FRAMEWORK)
+        install(FILES ${CMAKE_BINARY_DIR}/proj.pc DESTINATION ${INSTALL_PKGCONFIG_DIR} COMPONENT libraries)
+    endif()
 endif()
 
 ##############################################

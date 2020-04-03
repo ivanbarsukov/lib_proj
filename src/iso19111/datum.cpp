@@ -93,6 +93,9 @@ struct Datum::Private {
 
     // cppcheck-suppress functionStatic
     void exportAnchorDefinition(io::WKTFormatter *formatter) const;
+
+    // cppcheck-suppress functionStatic
+    void exportAnchorDefinition(io::JSONFormatter *formatter) const;
 };
 
 // ---------------------------------------------------------------------------
@@ -102,6 +105,17 @@ void Datum::Private::exportAnchorDefinition(io::WKTFormatter *formatter) const {
         formatter->startNode(io::WKTConstants::ANCHOR, false);
         formatter->addQuotedString(*anchorDefinition);
         formatter->endNode();
+    }
+}
+
+// ---------------------------------------------------------------------------
+
+void Datum::Private::exportAnchorDefinition(
+    io::JSONFormatter *formatter) const {
+    if (anchorDefinition) {
+        auto &writer = formatter->writer();
+        writer.AddObjKey("anchor");
+        writer.Add(*anchorDefinition);
     }
 }
 
@@ -186,11 +200,26 @@ void Datum::setAnchor(const util::optional<std::string> &anchor) {
 
 // ---------------------------------------------------------------------------
 
-bool Datum::__isEquivalentTo(const util::IComparable *other,
-                             util::IComparable::Criterion criterion) const {
+void Datum::setProperties(
+    const util::PropertyMap &properties) // throw(InvalidValueTypeException)
+{
+    std::string publicationDate;
+    properties.getStringValue("PUBLICATION_DATE", publicationDate);
+    if (!publicationDate.empty()) {
+        d->publicationDate = common::DateTime::create(publicationDate);
+    }
+    ObjectUsage::setProperties(properties);
+}
+
+// ---------------------------------------------------------------------------
+
+//! @cond Doxygen_Suppress
+bool Datum::_isEquivalentTo(const util::IComparable *other,
+                            util::IComparable::Criterion criterion,
+                            const io::DatabaseContextPtr &dbContext) const {
     auto otherDatum = dynamic_cast<const Datum *>(other);
     if (otherDatum == nullptr ||
-        !ObjectUsage::_isEquivalentTo(other, criterion)) {
+        !ObjectUsage::_isEquivalentTo(other, criterion, dbContext)) {
         return false;
     }
     if (criterion == util::IComparable::Criterion::STRICT) {
@@ -221,12 +250,13 @@ bool Datum::__isEquivalentTo(const util::IComparable *other,
         }
         if (conventionalRS() && otherDatum->conventionalRS() &&
             conventionalRS()->_isEquivalentTo(
-                otherDatum->conventionalRS().get(), criterion)) {
+                otherDatum->conventionalRS().get(), criterion, dbContext)) {
             return false;
         }
     }
     return true;
 }
+//! @endcond
 
 // ---------------------------------------------------------------------------
 
@@ -348,6 +378,40 @@ void PrimeMeridian::_exportToWKT(
 // ---------------------------------------------------------------------------
 
 //! @cond Doxygen_Suppress
+void PrimeMeridian::_exportToJSON(
+    io::JSONFormatter *formatter) const // throw(FormattingException)
+{
+    auto &writer = formatter->writer();
+    auto objectContext(
+        formatter->MakeObjectContext("PrimeMeridian", !identifiers().empty()));
+
+    writer.AddObjKey("name");
+    std::string l_name =
+        name()->description().has_value() ? nameStr() : "Greenwich";
+    writer.Add(l_name);
+
+    const auto &l_long = longitude();
+    writer.AddObjKey("longitude");
+    const auto &unit = l_long.unit();
+    if (unit == common::UnitOfMeasure::DEGREE) {
+        writer.Add(l_long.value(), 15);
+    } else {
+        auto longitudeContext(formatter->MakeObjectContext(nullptr, false));
+        writer.AddObjKey("value");
+        writer.Add(l_long.value(), 15);
+        writer.AddObjKey("unit");
+        unit._exportToJSON(formatter);
+    }
+
+    if (formatter->outputId()) {
+        formatID(formatter);
+    }
+}
+//! @endcond
+
+// ---------------------------------------------------------------------------
+
+//! @cond Doxygen_Suppress
 std::string
 PrimeMeridian::getPROJStringWellKnownName(const common::Angle &angle) {
     const double valRad = angle.getSIValue();
@@ -389,11 +453,11 @@ void PrimeMeridian::_exportToPROJString(
 
 //! @cond Doxygen_Suppress
 bool PrimeMeridian::_isEquivalentTo(
-    const util::IComparable *other,
-    util::IComparable::Criterion criterion) const {
+    const util::IComparable *other, util::IComparable::Criterion criterion,
+    const io::DatabaseContextPtr &dbContext) const {
     auto otherPM = dynamic_cast<const PrimeMeridian *>(other);
     if (otherPM == nullptr ||
-        !IdentifiedObject::_isEquivalentTo(other, criterion)) {
+        !IdentifiedObject::_isEquivalentTo(other, criterion, dbContext)) {
         return false;
     }
     // In MapInfo, the Paris prime meridian is returned as 2.3372291666667
@@ -505,7 +569,7 @@ Ellipsoid::inverseFlattening() PROJ_PURE_DEFN {
  * has been defined with this value.
  *
  * @see computeSemiMinorAxis() that will always return a valid value of the
- * inverse flattening, whether the ellipsoid has been defined through inverse
+ * semi-minor axis, whether the ellipsoid has been defined through inverse
  * flattening or semi-minor axis.
  *
  * @return the semi-minor axis of the ellipsoid, or empty.
@@ -768,6 +832,66 @@ void Ellipsoid::_exportToWKT(
 
 // ---------------------------------------------------------------------------
 
+//! @cond Doxygen_Suppress
+void Ellipsoid::_exportToJSON(
+    io::JSONFormatter *formatter) const // throw(FormattingException)
+{
+    auto &writer = formatter->writer();
+    auto objectContext(
+        formatter->MakeObjectContext("Ellipsoid", !identifiers().empty()));
+
+    writer.AddObjKey("name");
+    auto l_name = nameStr();
+    if (l_name.empty()) {
+        writer.Add("unnamed");
+    } else {
+        writer.Add(l_name);
+    }
+
+    const auto &semiMajor = semiMajorAxis();
+    const auto &semiMajorUnit = semiMajor.unit();
+    writer.AddObjKey(isSphere() ? "radius" : "semi_major_axis");
+    if (semiMajorUnit == common::UnitOfMeasure::METRE) {
+        writer.Add(semiMajor.value(), 15);
+    } else {
+        auto objContext(formatter->MakeObjectContext(nullptr, false));
+        writer.AddObjKey("value");
+        writer.Add(semiMajor.value(), 15);
+
+        writer.AddObjKey("unit");
+        semiMajorUnit._exportToJSON(formatter);
+    }
+
+    if (!isSphere()) {
+        const auto &l_inverseFlattening = inverseFlattening();
+        if (l_inverseFlattening.has_value()) {
+            writer.AddObjKey("inverse_flattening");
+            writer.Add(l_inverseFlattening->getSIValue(), 15);
+        } else {
+            writer.AddObjKey("semi_minor_axis");
+            const auto &l_semiMinorAxis(semiMinorAxis());
+            const auto &semiMinorAxisUnit(l_semiMinorAxis->unit());
+            if (semiMinorAxisUnit == common::UnitOfMeasure::METRE) {
+                writer.Add(l_semiMinorAxis->value(), 15);
+            } else {
+                auto objContext(formatter->MakeObjectContext(nullptr, false));
+                writer.AddObjKey("value");
+                writer.Add(l_semiMinorAxis->value(), 15);
+
+                writer.AddObjKey("unit");
+                semiMinorAxisUnit._exportToJSON(formatter);
+            }
+        }
+    }
+
+    if (formatter->outputId()) {
+        formatID(formatter);
+    }
+}
+//! @endcond
+
+// ---------------------------------------------------------------------------
+
 bool Ellipsoid::lookForProjWellKnownEllps(std::string &projEllpsName,
                                           std::string &ellpsName) const {
     const double a = semiMajorAxis().getSIValue();
@@ -863,11 +987,12 @@ EllipsoidNNPtr Ellipsoid::identify() const {
 
 //! @cond Doxygen_Suppress
 bool Ellipsoid::_isEquivalentTo(const util::IComparable *other,
-                                util::IComparable::Criterion criterion) const {
+                                util::IComparable::Criterion criterion,
+                                const io::DatabaseContextPtr &dbContext) const {
     auto otherEllipsoid = dynamic_cast<const Ellipsoid *>(other);
     if (otherEllipsoid == nullptr ||
         (criterion == util::IComparable::Criterion::STRICT &&
-         !IdentifiedObject::_isEquivalentTo(other, criterion))) {
+         !IdentifiedObject::_isEquivalentTo(other, criterion, dbContext))) {
         return false;
     }
 
@@ -1076,7 +1201,8 @@ void GeodeticReferenceFrame::_exportToWKT(
     io::WKTFormatter *formatter) const // throw(FormattingException)
 {
     const bool isWKT2 = formatter->version() == io::WKTFormatter::Version::WKT2;
-    formatter->startNode(io::WKTConstants::DATUM, !identifiers().empty());
+    const auto &ids = identifiers();
+    formatter->startNode(io::WKTConstants::DATUM, !ids.empty());
     auto l_name = nameStr();
     if (l_name.empty()) {
         l_name = "unnamed";
@@ -1111,10 +1237,35 @@ void GeodeticReferenceFrame::_exportToWKT(
                     }
                 }
             }
-            // Replace spaces by underscore, except if it is a special MapInfo
-            // datum name
-        } else if (!starts_with(l_name, "MIF ")) {
-            l_name = io::WKTFormatter::morphNameToESRI(l_name);
+        } else {
+            // Replace spaces by underscore for datum names coming from EPSG
+            // so as to emulate GDAL < 3 importFromEPSG()
+            if (ids.size() == 1 && *(ids.front()->codeSpace()) == "EPSG") {
+                l_name = io::WKTFormatter::morphNameToESRI(l_name);
+            } else if (ids.empty()) {
+                const auto &dbContext = formatter->databaseContext();
+                if (dbContext) {
+                    auto factory = io::AuthorityFactory::create(
+                        NN_NO_CHECK(dbContext), std::string());
+                    // We use anonymous autority and approximate matching, so
+                    // as to trigger the caching done in createObjectsFromName()
+                    // in that case.
+                    auto matches = factory->createObjectsFromName(
+                        l_name, {io::AuthorityFactory::ObjectType::
+                                     GEODETIC_REFERENCE_FRAME},
+                        true, 2);
+                    if (matches.size() == 1) {
+                        const auto &match = matches.front();
+                        const auto &matchId = match->identifiers();
+                        if (matchId.size() == 1 &&
+                            *(matchId.front()->codeSpace()) == "EPSG" &&
+                            metadata::Identifier::isEquivalentName(
+                                l_name.c_str(), match->nameStr().c_str())) {
+                            l_name = io::WKTFormatter::morphNameToESRI(l_name);
+                        }
+                    }
+                }
+            }
             if (l_name == "World_Geodetic_System_1984") {
                 l_name = "WGS_1984";
             }
@@ -1153,18 +1304,110 @@ void GeodeticReferenceFrame::_exportToWKT(
 // ---------------------------------------------------------------------------
 
 //! @cond Doxygen_Suppress
+void GeodeticReferenceFrame::_exportToJSON(
+    io::JSONFormatter *formatter) const // throw(FormattingException)
+{
+    auto dynamicGRF = dynamic_cast<const DynamicGeodeticReferenceFrame *>(this);
+
+    auto objectContext(formatter->MakeObjectContext(
+        dynamicGRF ? "DynamicGeodeticReferenceFrame" : "GeodeticReferenceFrame",
+        !identifiers().empty()));
+    auto &writer = formatter->writer();
+
+    writer.AddObjKey("name");
+    auto l_name = nameStr();
+    if (l_name.empty()) {
+        writer.Add("unnamed");
+    } else {
+        writer.Add(l_name);
+    }
+
+    Datum::getPrivate()->exportAnchorDefinition(formatter);
+
+    if (dynamicGRF) {
+        writer.AddObjKey("frame_reference_epoch");
+        writer.Add(dynamicGRF->frameReferenceEpoch().value());
+
+        const auto &deformationModel = dynamicGRF->deformationModelName();
+        if (deformationModel.has_value()) {
+            writer.AddObjKey("deformation_model");
+            writer.Add(*deformationModel);
+        }
+    }
+
+    writer.AddObjKey("ellipsoid");
+    formatter->setOmitTypeInImmediateChild();
+    ellipsoid()->_exportToJSON(formatter);
+
+    const auto &l_primeMeridian(primeMeridian());
+    if (l_primeMeridian->nameStr() != "Greenwich") {
+        writer.AddObjKey("prime_meridian");
+        formatter->setOmitTypeInImmediateChild();
+        primeMeridian()->_exportToJSON(formatter);
+    }
+
+    ObjectUsage::baseExportToJSON(formatter);
+}
+//! @endcond
+
+// ---------------------------------------------------------------------------
+
+//! @cond Doxygen_Suppress
 bool GeodeticReferenceFrame::_isEquivalentTo(
-    const util::IComparable *other,
-    util::IComparable::Criterion criterion) const {
+    const util::IComparable *other, util::IComparable::Criterion criterion,
+    const io::DatabaseContextPtr &dbContext) const {
     auto otherGRF = dynamic_cast<const GeodeticReferenceFrame *>(other);
-    if (otherGRF == nullptr || !Datum::_isEquivalentTo(other, criterion)) {
+    if (otherGRF == nullptr ||
+        !Datum::_isEquivalentTo(other, criterion, dbContext)) {
         return false;
     }
     return primeMeridian()->_isEquivalentTo(otherGRF->primeMeridian().get(),
-                                            criterion) &&
-           ellipsoid()->_isEquivalentTo(otherGRF->ellipsoid().get(), criterion);
+                                            criterion, dbContext) &&
+           ellipsoid()->_isEquivalentTo(otherGRF->ellipsoid().get(), criterion,
+                                        dbContext);
 }
 //! @endcond
+
+// ---------------------------------------------------------------------------
+
+bool GeodeticReferenceFrame::hasEquivalentNameToUsingAlias(
+    const IdentifiedObject *other,
+    const io::DatabaseContextPtr &dbContext) const {
+    if (dbContext) {
+        if (!identifiers().empty()) {
+            const auto &id = identifiers().front();
+            auto aliases =
+                dbContext->getAliases(*(id->codeSpace()), id->code(), nameStr(),
+                                      "geodetic_datum", std::string());
+            const char *otherName = other->nameStr().c_str();
+            for (const auto &alias : aliases) {
+                if (metadata::Identifier::isEquivalentName(otherName,
+                                                           alias.c_str())) {
+                    return true;
+                }
+            }
+            return false;
+        } else if (!other->identifiers().empty()) {
+            auto otherGRF = dynamic_cast<const GeodeticReferenceFrame *>(other);
+            if (otherGRF) {
+                return otherGRF->hasEquivalentNameToUsingAlias(this, dbContext);
+            }
+            return false;
+        }
+
+        auto aliases =
+            dbContext->getAliases(std::string(), std::string(), nameStr(),
+                                  "geodetic_datum", std::string());
+        const char *otherName = other->nameStr().c_str();
+        for (const auto &alias : aliases) {
+            if (metadata::Identifier::isEquivalentName(otherName,
+                                                       alias.c_str())) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
 
 // ---------------------------------------------------------------------------
 
@@ -1237,11 +1480,11 @@ DynamicGeodeticReferenceFrame::deformationModelName() const {
 
 //! @cond Doxygen_Suppress
 bool DynamicGeodeticReferenceFrame::_isEquivalentTo(
-    const util::IComparable *other,
-    util::IComparable::Criterion criterion) const {
+    const util::IComparable *other, util::IComparable::Criterion criterion,
+    const io::DatabaseContextPtr &dbContext) const {
     auto otherDGRF = dynamic_cast<const DynamicGeodeticReferenceFrame *>(other);
     if (otherDGRF == nullptr ||
-        !GeodeticReferenceFrame::_isEquivalentTo(other, criterion)) {
+        !GeodeticReferenceFrame::_isEquivalentTo(other, criterion, dbContext)) {
         return false;
     }
     return frameReferenceEpoch()._isEquivalentTo(
@@ -1259,7 +1502,7 @@ void DynamicGeodeticReferenceFrame::_exportToWKT(
     io::WKTFormatter *formatter) const // throw(FormattingException)
 {
     const bool isWKT2 = formatter->version() == io::WKTFormatter::Version::WKT2;
-    if (isWKT2 && formatter->use2018Keywords()) {
+    if (isWKT2 && formatter->use2019Keywords()) {
         formatter->startNode(io::WKTConstants::DYNAMIC, false);
         formatter->startNode(io::WKTConstants::FRAMEEPOCH, false);
         formatter->add(
@@ -1279,7 +1522,7 @@ void DynamicGeodeticReferenceFrame::_exportToWKT(
 
 // ---------------------------------------------------------------------------
 
-/** \brief Instantiate a DyanmicGeodeticReferenceFrame
+/** \brief Instantiate a DynamicGeodeticReferenceFrame
  *
  * @param properties See \ref general_properties.
  * At minimum the name should be defined.
@@ -1288,7 +1531,7 @@ void DynamicGeodeticReferenceFrame::_exportToWKT(
  * @param primeMeridian the PrimeMeridian.
  * @param frameReferenceEpochIn the frame reference epoch.
  * @param deformationModelNameIn deformation model name, or empty
- * @return new DyanmicGeodeticReferenceFrame.
+ * @return new DynamicGeodeticReferenceFrame.
  */
 DynamicGeodeticReferenceFrameNNPtr DynamicGeodeticReferenceFrame::create(
     const util::PropertyMap &properties, const EllipsoidNNPtr &ellipsoid,
@@ -1373,9 +1616,9 @@ void DatumEnsemble::_exportToWKT(
     io::WKTFormatter *formatter) const // throw(FormattingException)
 {
     const bool isWKT2 = formatter->version() == io::WKTFormatter::Version::WKT2;
-    if (!isWKT2 || !formatter->use2018Keywords()) {
+    if (!isWKT2 || !formatter->use2019Keywords()) {
         throw io::FormattingException(
-            "DatumEnsemble can only be exported to WKT2:2018");
+            "DatumEnsemble can only be exported to WKT2:2019");
     }
 
     auto l_datums = datums();
@@ -1414,6 +1657,56 @@ void DatumEnsemble::_exportToWKT(
     formatter->add(positionalAccuracy()->value());
     formatter->endNode();
     formatter->endNode();
+}
+//! @endcond
+
+// ---------------------------------------------------------------------------
+
+//! @cond Doxygen_Suppress
+void DatumEnsemble::_exportToJSON(
+    io::JSONFormatter *formatter) const // throw(FormattingException)
+{
+    auto objectContext(
+        formatter->MakeObjectContext("DatumEnsemble", !identifiers().empty()));
+    auto &writer = formatter->writer();
+
+    writer.AddObjKey("name");
+    auto l_name = nameStr();
+    if (l_name.empty()) {
+        writer.Add("unnamed");
+    } else {
+        writer.Add(l_name);
+    }
+
+    auto l_datums = datums();
+    writer.AddObjKey("members");
+    {
+        auto membersContext(writer.MakeArrayContext(false));
+        for (const auto &datum : l_datums) {
+            auto memberContext(writer.MakeObjectContext());
+            writer.AddObjKey("name");
+            const auto &l_datum_name = datum->nameStr();
+            if (!l_datum_name.empty()) {
+                writer.Add(l_datum_name);
+            } else {
+                writer.Add("unnamed");
+            }
+            datum->formatID(formatter);
+        }
+    }
+
+    auto grfFirst = std::dynamic_pointer_cast<GeodeticReferenceFrame>(
+        l_datums[0].as_nullable());
+    if (grfFirst) {
+        writer.AddObjKey("ellipsoid");
+        formatter->setOmitTypeInImmediateChild();
+        grfFirst->ellipsoid()->_exportToJSON(formatter);
+    }
+
+    writer.AddObjKey("accuracy");
+    writer.Add(positionalAccuracy()->value());
+
+    formatID(formatter);
 }
 //! @endcond
 
@@ -1583,11 +1876,50 @@ void VerticalReferenceFrame::_exportToWKT(
 // ---------------------------------------------------------------------------
 
 //! @cond Doxygen_Suppress
+void VerticalReferenceFrame::_exportToJSON(
+    io::JSONFormatter *formatter) const // throw(FormattingException)
+{
+    auto dynamicGRF = dynamic_cast<const DynamicVerticalReferenceFrame *>(this);
+
+    auto objectContext(formatter->MakeObjectContext(
+        dynamicGRF ? "DynamicVerticalReferenceFrame" : "VerticalReferenceFrame",
+        !identifiers().empty()));
+    auto &writer = formatter->writer();
+
+    writer.AddObjKey("name");
+    auto l_name = nameStr();
+    if (l_name.empty()) {
+        writer.Add("unnamed");
+    } else {
+        writer.Add(l_name);
+    }
+
+    Datum::getPrivate()->exportAnchorDefinition(formatter);
+
+    if (dynamicGRF) {
+        writer.AddObjKey("frame_reference_epoch");
+        writer.Add(dynamicGRF->frameReferenceEpoch().value());
+
+        const auto &deformationModel = dynamicGRF->deformationModelName();
+        if (deformationModel.has_value()) {
+            writer.AddObjKey("deformation_model");
+            writer.Add(*deformationModel);
+        }
+    }
+
+    ObjectUsage::baseExportToJSON(formatter);
+}
+//! @endcond
+
+// ---------------------------------------------------------------------------
+
+//! @cond Doxygen_Suppress
 bool VerticalReferenceFrame::_isEquivalentTo(
-    const util::IComparable *other,
-    util::IComparable::Criterion criterion) const {
+    const util::IComparable *other, util::IComparable::Criterion criterion,
+    const io::DatabaseContextPtr &dbContext) const {
     auto otherVRF = dynamic_cast<const VerticalReferenceFrame *>(other);
-    if (otherVRF == nullptr || !Datum::_isEquivalentTo(other, criterion)) {
+    if (otherVRF == nullptr ||
+        !Datum::_isEquivalentTo(other, criterion, dbContext)) {
         return false;
     }
     if ((realizationMethod().has_value() ^
@@ -1674,11 +2006,11 @@ DynamicVerticalReferenceFrame::deformationModelName() const {
 
 //! @cond Doxygen_Suppress
 bool DynamicVerticalReferenceFrame::_isEquivalentTo(
-    const util::IComparable *other,
-    util::IComparable::Criterion criterion) const {
+    const util::IComparable *other, util::IComparable::Criterion criterion,
+    const io::DatabaseContextPtr &dbContext) const {
     auto otherDGRF = dynamic_cast<const DynamicVerticalReferenceFrame *>(other);
     if (otherDGRF == nullptr ||
-        !VerticalReferenceFrame::_isEquivalentTo(other, criterion)) {
+        !VerticalReferenceFrame::_isEquivalentTo(other, criterion, dbContext)) {
         return false;
     }
     return frameReferenceEpoch()._isEquivalentTo(
@@ -1696,7 +2028,7 @@ void DynamicVerticalReferenceFrame::_exportToWKT(
     io::WKTFormatter *formatter) const // throw(FormattingException)
 {
     const bool isWKT2 = formatter->version() == io::WKTFormatter::Version::WKT2;
-    if (isWKT2 && formatter->use2018Keywords()) {
+    if (isWKT2 && formatter->use2019Keywords()) {
         formatter->startNode(io::WKTConstants::DYNAMIC, false);
         formatter->startNode(io::WKTConstants::FRAMEEPOCH, false);
         formatter->add(
@@ -1715,7 +2047,7 @@ void DynamicVerticalReferenceFrame::_exportToWKT(
 
 // ---------------------------------------------------------------------------
 
-/** \brief Instantiate a DyanmicVerticalReferenceFrame
+/** \brief Instantiate a DynamicVerticalReferenceFrame
  *
  * @param properties See \ref general_properties.
  * At minimum the name should be defined.
@@ -1723,7 +2055,7 @@ void DynamicVerticalReferenceFrame::_exportToWKT(
  * @param realizationMethodIn the realization method, or empty.
  * @param frameReferenceEpochIn the frame reference epoch.
  * @param deformationModelNameIn deformation model name, or empty
- * @return new DyanmicVerticalReferenceFrame.
+ * @return new DynamicVerticalReferenceFrame.
  */
 DynamicVerticalReferenceFrameNNPtr DynamicVerticalReferenceFrame::create(
     const util::PropertyMap &properties,
@@ -1822,7 +2154,7 @@ void TemporalDatum::_exportToWKT(
     }
     formatter->startNode(io::WKTConstants::TDATUM, !identifiers().empty());
     formatter->addQuotedString(nameStr());
-    if (formatter->use2018Keywords()) {
+    if (formatter->use2019Keywords()) {
         formatter->startNode(io::WKTConstants::CALENDAR, false);
         formatter->addQuotedString(calendar());
         formatter->endNode();
@@ -1846,11 +2178,38 @@ void TemporalDatum::_exportToWKT(
 // ---------------------------------------------------------------------------
 
 //! @cond Doxygen_Suppress
+void TemporalDatum::_exportToJSON(
+    io::JSONFormatter *formatter) const // throw(FormattingException)
+{
+    auto objectContext(
+        formatter->MakeObjectContext("TemporalDatum", !identifiers().empty()));
+    auto &writer = formatter->writer();
+
+    writer.AddObjKey("name");
+    writer.Add(nameStr());
+
+    writer.AddObjKey("calendar");
+    writer.Add(calendar());
+
+    const auto &timeOriginStr = temporalOrigin().toString();
+    if (!timeOriginStr.empty()) {
+        writer.AddObjKey("time_origin");
+        writer.Add(timeOriginStr);
+    }
+
+    ObjectUsage::baseExportToJSON(formatter);
+}
+//! @endcond
+
+// ---------------------------------------------------------------------------
+
+//! @cond Doxygen_Suppress
 bool TemporalDatum::_isEquivalentTo(
-    const util::IComparable *other,
-    util::IComparable::Criterion criterion) const {
+    const util::IComparable *other, util::IComparable::Criterion criterion,
+    const io::DatabaseContextPtr &dbContext) const {
     auto otherTD = dynamic_cast<const TemporalDatum *>(other);
-    if (otherTD == nullptr || !Datum::_isEquivalentTo(other, criterion)) {
+    if (otherTD == nullptr ||
+        !Datum::_isEquivalentTo(other, criterion, dbContext)) {
         return false;
     }
     return temporalOrigin().toString() ==
@@ -1919,11 +2278,31 @@ void EngineeringDatum::_exportToWKT(
 // ---------------------------------------------------------------------------
 
 //! @cond Doxygen_Suppress
+void EngineeringDatum::_exportToJSON(
+    io::JSONFormatter *formatter) const // throw(FormattingException)
+{
+    auto objectContext(formatter->MakeObjectContext("EngineeringDatum",
+                                                    !identifiers().empty()));
+    auto &writer = formatter->writer();
+
+    writer.AddObjKey("name");
+    writer.Add(nameStr());
+
+    Datum::getPrivate()->exportAnchorDefinition(formatter);
+
+    ObjectUsage::baseExportToJSON(formatter);
+}
+//! @endcond
+
+// ---------------------------------------------------------------------------
+
+//! @cond Doxygen_Suppress
 bool EngineeringDatum::_isEquivalentTo(
-    const util::IComparable *other,
-    util::IComparable::Criterion criterion) const {
+    const util::IComparable *other, util::IComparable::Criterion criterion,
+    const io::DatabaseContextPtr &dbContext) const {
     auto otherTD = dynamic_cast<const EngineeringDatum *>(other);
-    if (otherTD == nullptr || !Datum::_isEquivalentTo(other, criterion)) {
+    if (otherTD == nullptr ||
+        !Datum::_isEquivalentTo(other, criterion, dbContext)) {
         return false;
     }
     return true;
@@ -1985,11 +2364,31 @@ void ParametricDatum::_exportToWKT(
 // ---------------------------------------------------------------------------
 
 //! @cond Doxygen_Suppress
+void ParametricDatum::_exportToJSON(
+    io::JSONFormatter *formatter) const // throw(FormattingException)
+{
+    auto objectContext(formatter->MakeObjectContext("ParametricDatum",
+                                                    !identifiers().empty()));
+    auto &writer = formatter->writer();
+
+    writer.AddObjKey("name");
+    writer.Add(nameStr());
+
+    Datum::getPrivate()->exportAnchorDefinition(formatter);
+
+    ObjectUsage::baseExportToJSON(formatter);
+}
+//! @endcond
+
+// ---------------------------------------------------------------------------
+
+//! @cond Doxygen_Suppress
 bool ParametricDatum::_isEquivalentTo(
-    const util::IComparable *other,
-    util::IComparable::Criterion criterion) const {
+    const util::IComparable *other, util::IComparable::Criterion criterion,
+    const io::DatabaseContextPtr &dbContext) const {
     auto otherTD = dynamic_cast<const ParametricDatum *>(other);
-    if (otherTD == nullptr || !Datum::_isEquivalentTo(other, criterion)) {
+    if (otherTD == nullptr ||
+        !Datum::_isEquivalentTo(other, criterion, dbContext)) {
         return false;
     }
     return true;

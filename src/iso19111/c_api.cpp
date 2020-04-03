@@ -105,19 +105,55 @@ static void PROJ_NO_INLINE proj_log_debug(PJ_CONTEXT *ctx, const char *function,
 void proj_context_delete_cpp_context(struct projCppContext *cppContext) {
     delete cppContext;
 }
+// ---------------------------------------------------------------------------
 
-//! @endcond
+projCppContext::projCppContext(PJ_CONTEXT *ctx, const char *dbPath,
+                               const std::vector<std::string> &auxDbPaths)
+    : ctx_(ctx), dbPath_(dbPath ? dbPath : std::string()),
+      auxDbPaths_(auxDbPaths) {}
 
 // ---------------------------------------------------------------------------
 
-//! @cond Doxygen_Suppress
+std::vector<std::string>
+projCppContext::toVector(const char *const *auxDbPaths) {
+    std::vector<std::string> res;
+    for (auto iter = auxDbPaths; iter && *iter; ++iter) {
+        res.emplace_back(std::string(*iter));
+    }
+    return res;
+}
 
-static PROJ_NO_INLINE const DatabaseContextNNPtr &
-getDBcontext(PJ_CONTEXT *ctx) {
+// ---------------------------------------------------------------------------
+
+void projCppContext::closeDb() { databaseContext_ = nullptr; }
+
+// ---------------------------------------------------------------------------
+
+void projCppContext::autoCloseDbIfNeeded() {
+    if (getAutoCloseDb()) {
+        closeDb();
+    }
+}
+
+// ---------------------------------------------------------------------------
+
+NS_PROJ::io::DatabaseContextNNPtr projCppContext::getDatabaseContext() {
+    if (databaseContext_) {
+        return NN_NO_CHECK(databaseContext_);
+    }
+    auto dbContext =
+        NS_PROJ::io::DatabaseContext::create(dbPath_, auxDbPaths_, ctx_);
+    databaseContext_ = dbContext;
+    return dbContext;
+}
+
+// ---------------------------------------------------------------------------
+
+static PROJ_NO_INLINE DatabaseContextNNPtr getDBcontext(PJ_CONTEXT *ctx) {
     if (ctx->cpp_context == nullptr) {
         ctx->cpp_context = new projCppContext(ctx);
     }
-    return ctx->cpp_context->databaseContext;
+    return ctx->cpp_context->getDatabaseContext();
 }
 
 // ---------------------------------------------------------------------------
@@ -141,9 +177,16 @@ static PJ *pj_obj_create(PJ_CONTEXT *ctx, const IdentifiedObjectNNPtr &objIn) {
             auto formatter = PROJStringFormatter::create(
                 PROJStringFormatter::Convention::PROJ_5, dbContext);
             auto projString = coordop->exportToPROJString(formatter.get());
+            if (proj_context_is_network_enabled(ctx)) {
+                ctx->defer_grid_opening = true;
+            }
             auto pj = pj_create_internal(ctx, projString.c_str());
+            ctx->defer_grid_opening = false;
             if (pj) {
                 pj->iso_obj = objIn;
+                if (ctx->cpp_context) {
+                    ctx->cpp_context->autoCloseDbIfNeeded();
+                }
                 return pj;
             }
         } catch (const std::exception &) {
@@ -156,6 +199,9 @@ static PJ *pj_obj_create(PJ_CONTEXT *ctx, const IdentifiedObjectNNPtr &objIn) {
         pj->ctx = ctx;
         pj->descr = "ISO-19111 object";
         pj->iso_obj = objIn;
+    }
+    if (ctx->cpp_context) {
+        ctx->cpp_context->autoCloseDbIfNeeded();
     }
     return pj;
 }
@@ -191,6 +237,26 @@ struct PJ_OBJ_LIST {
 
 // ---------------------------------------------------------------------------
 
+/** \brief Set if the database must be closed after each C API call where it
+ * has been openeded, and automatically re-openeded when needed.
+ *
+ * The default value is FALSE, that is the database remains open until the
+ * context is destroyed.
+ *
+ * @param ctx PROJ context, or NULL for default context
+ * @param autoclose Boolean parameter
+ * @since 6.2
+ */
+void proj_context_set_autoclose_database(PJ_CONTEXT *ctx, int autoclose) {
+    SANITIZE_CTX(ctx);
+    if (ctx->cpp_context == nullptr) {
+        ctx->cpp_context = new projCppContext(ctx);
+    }
+    ctx->cpp_context->setAutoCloseDb(autoclose != FALSE);
+}
+
+// ---------------------------------------------------------------------------
+
 /** \brief Explicitly point to the main PROJ CRS and coordinate operation
  * definition database ("proj.db"), and potentially auxiliary databases with
  * same structure.
@@ -207,13 +273,29 @@ int proj_context_set_database_path(PJ_CONTEXT *ctx, const char *dbPath,
                                    const char *const *options) {
     SANITIZE_CTX(ctx);
     (void)options;
+    std::string osPrevDbPath;
+    std::vector<std::string> osPrevAuxDbPaths;
+    bool autoCloseDb = false;
+    if (ctx->cpp_context) {
+        osPrevDbPath = ctx->cpp_context->getDbPath();
+        osPrevAuxDbPaths = ctx->cpp_context->getAuxDbPaths();
+        autoCloseDb = ctx->cpp_context->getAutoCloseDb();
+    }
     delete ctx->cpp_context;
     ctx->cpp_context = nullptr;
     try {
-        ctx->cpp_context = new projCppContext(ctx, dbPath, auxDbPaths);
+        ctx->cpp_context = new projCppContext(
+            ctx, dbPath, projCppContext::toVector(auxDbPaths));
+        ctx->cpp_context->setAutoCloseDb(autoCloseDb);
+        ctx->cpp_context->getDatabaseContext();
+        ctx->cpp_context->autoCloseDbIfNeeded();
         return true;
     } catch (const std::exception &e) {
         proj_log_error(ctx, __FUNCTION__, e.what());
+        delete ctx->cpp_context;
+        ctx->cpp_context =
+            new projCppContext(ctx, osPrevDbPath.c_str(), osPrevAuxDbPaths);
+        ctx->cpp_context->setAutoCloseDb(autoCloseDb);
         return false;
     }
 }
@@ -231,7 +313,12 @@ int proj_context_set_database_path(PJ_CONTEXT *ctx, const char *dbPath,
 const char *proj_context_get_database_path(PJ_CONTEXT *ctx) {
     SANITIZE_CTX(ctx);
     try {
-        return getDBcontext(ctx)->getPath().c_str();
+        // temporary variable must be used as getDBcontext() might create
+        // ctx->cpp_context
+        auto osPath(getDBcontext(ctx)->getPath());
+        ctx->cpp_context->lastDbPath_ = osPath;
+        ctx->cpp_context->autoCloseDbIfNeeded();
+        return ctx->cpp_context->lastDbPath_.c_str();
     } catch (const std::exception &e) {
         proj_log_error(ctx, __FUNCTION__, e.what());
         return nullptr;
@@ -253,7 +340,12 @@ const char *proj_context_get_database_metadata(PJ_CONTEXT *ctx,
                                                const char *key) {
     SANITIZE_CTX(ctx);
     try {
-        return getDBcontext(ctx)->getMetadata(key);
+        // temporary variable must be used as getDBcontext() might create
+        // ctx->cpp_context
+        auto osVal(getDBcontext(ctx)->getMetadata(key));
+        ctx->cpp_context->lastDbMetadataItem_ = osVal;
+        ctx->cpp_context->autoCloseDbIfNeeded();
+        return ctx->cpp_context->lastDbMetadataItem_.c_str();
     } catch (const std::exception &e) {
         proj_log_error(ctx, __FUNCTION__, e.what());
         return nullptr;
@@ -272,8 +364,8 @@ PJ_GUESSED_WKT_DIALECT proj_context_guess_wkt_dialect(PJ_CONTEXT *ctx,
     (void)ctx;
     assert(wkt);
     switch (WKTParser().guessDialect(wkt)) {
-    case WKTParser::WKTGuessedDialect::WKT2_2018:
-        return PJ_GUESSED_WKT2_2018;
+    case WKTParser::WKTGuessedDialect::WKT2_2019:
+        return PJ_GUESSED_WKT2_2019;
     case WKTParser::WKTGuessedDialect::WKT2_2015:
         return PJ_GUESSED_WKT2_2015;
     case WKTParser::WKTGuessedDialect::WKT1_GDAL:
@@ -328,9 +420,9 @@ PJ *proj_clone(PJ_CONTEXT *ctx, const PJ *obj) {
 
 // ---------------------------------------------------------------------------
 
-/** \brief Instantiate an object from a WKT string, PROJ string or object code
+/** \brief Instantiate an object from a WKT string, PROJ string, object code
  * (like "EPSG:4326", "urn:ogc:def:crs:EPSG::4326",
- * "urn:ogc:def:coordinateOperation:EPSG::1671").
+ * "urn:ogc:def:coordinateOperation:EPSG::1671") or PROJJSON string.
  *
  * This function calls osgeo::proj::io::createFromUserInput()
  *
@@ -358,6 +450,9 @@ PJ *proj_create(PJ_CONTEXT *ctx, const char *text) {
         }
     } catch (const std::exception &e) {
         proj_log_error(ctx, __FUNCTION__, e.what());
+    }
+    if (ctx->cpp_context) {
+        ctx->cpp_context->autoCloseDbIfNeeded();
     }
     return nullptr;
 }
@@ -407,7 +502,7 @@ template <class T> static PROJ_STRING_LIST to_string_list(T &&set) {
  * proj_string_list_destroy().
  * @param out_grammar_errors Pointer to a PROJ_STRING_LIST object, or NULL.
  * If provided, *out_grammar_errors will contain a list of errors regarding the
- * WKT grammaer. It must be freed with proj_string_list_destroy().
+ * WKT grammar. It must be freed with proj_string_list_destroy().
  * @return Object that must be unreferenced with proj_destroy(), or NULL in
  * case of error.
  */
@@ -431,6 +526,7 @@ PJ *proj_create_from_wkt(PJ_CONTEXT *ctx, const char *wkt,
         if (dbContext) {
             parser.attachDatabaseContext(NN_NO_CHECK(dbContext));
         }
+        parser.setStrict(false);
         for (auto iter = options; iter && iter[0]; ++iter) {
             const char *value;
             if ((value = getOptionValue(*iter, "STRICT="))) {
@@ -445,10 +541,19 @@ PJ *proj_create_from_wkt(PJ_CONTEXT *ctx, const char *wkt,
         auto obj = nn_dynamic_pointer_cast<IdentifiedObject>(
             parser.createFromWKT(wkt));
 
+        std::vector<std::string> warningsFromParsing;
         if (out_grammar_errors) {
-            auto warnings = parser.warningList();
-            if (!warnings.empty()) {
-                *out_grammar_errors = to_string_list(warnings);
+            auto rawWarnings = parser.warningList();
+            std::vector<std::string> grammarWarnings;
+            for (const auto &msg : rawWarnings) {
+                if (msg.find("Default it to") != std::string::npos) {
+                    warningsFromParsing.push_back(msg);
+                } else {
+                    grammarWarnings.push_back(msg);
+                }
+            }
+            if (!grammarWarnings.empty()) {
+                *out_grammar_errors = to_string_list(grammarWarnings);
             }
         }
 
@@ -457,6 +562,8 @@ PJ *proj_create_from_wkt(PJ_CONTEXT *ctx, const char *wkt,
             if (derivedCRS) {
                 auto warnings =
                     derivedCRS->derivingConversionRef()->validateParameters();
+                warnings.insert(warnings.end(), warningsFromParsing.begin(),
+                                warningsFromParsing.end());
                 if (!warnings.empty()) {
                     *out_warnings = to_string_list(warnings);
                 }
@@ -486,6 +593,9 @@ PJ *proj_create_from_wkt(PJ_CONTEXT *ctx, const char *wkt,
         } else {
             proj_log_error(ctx, __FUNCTION__, e.what());
         }
+    }
+    if (ctx->cpp_context) {
+        ctx->cpp_context->autoCloseDbIfNeeded();
     }
     return nullptr;
 }
@@ -545,6 +655,7 @@ PJ *proj_create_from_database(PJ_CONTEXT *ctx, const char *auth_name,
     } catch (const std::exception &e) {
         proj_log_error(ctx, __FUNCTION__, e.what());
     }
+    ctx->cpp_context->autoCloseDbIfNeeded();
     return nullptr;
 }
 
@@ -617,10 +728,75 @@ int proj_uom_get_info_from_database(PJ_CONTEXT *ctx, const char *auth_name,
         if (out_category) {
             *out_category = get_unit_category(obj->type());
         }
+        ctx->cpp_context->autoCloseDbIfNeeded();
         return true;
     } catch (const std::exception &e) {
         proj_log_error(ctx, __FUNCTION__, e.what());
     }
+    ctx->cpp_context->autoCloseDbIfNeeded();
+    return false;
+}
+
+// ---------------------------------------------------------------------------
+
+/** \brief Get information for a grid from a database lookup.
+ *
+ * @param ctx Context, or NULL for default context.
+ * @param grid_name Grid name (must not be NULL)
+ * @param out_full_name Pointer to a string value to store the grid full
+ * filename. or NULL
+ * @param out_package_name Pointer to a string value to store the package name
+ * where
+ * the grid might be found. or NULL
+ * @param out_url Pointer to a string value to store the grid URL or the
+ * package URL where the grid might be found. or NULL
+ * @param out_direct_download Pointer to a int (boolean) value to store whether
+ * *out_url can be downloaded directly. or NULL
+ * @param out_open_license Pointer to a int (boolean) value to store whether
+ * the grid is released with an open license. or NULL
+ * @param out_available Pointer to a int (boolean) value to store whether the
+ * grid is available at runtime. or NULL
+ * @return TRUE in case of success.
+ */
+int PROJ_DLL proj_grid_get_info_from_database(
+    PJ_CONTEXT *ctx, const char *grid_name, const char **out_full_name,
+    const char **out_package_name, const char **out_url,
+    int *out_direct_download, int *out_open_license, int *out_available) {
+    assert(grid_name);
+    SANITIZE_CTX(ctx);
+    try {
+        auto db_context = getDBcontext(ctx);
+        bool direct_download;
+        bool open_license;
+        bool available;
+        if (!db_context->lookForGridInfo(
+                grid_name, false, ctx->cpp_context->lastGridFullName_,
+                ctx->cpp_context->lastGridPackageName_,
+                ctx->cpp_context->lastGridUrl_, direct_download, open_license,
+                available)) {
+            ctx->cpp_context->autoCloseDbIfNeeded();
+            return false;
+        }
+
+        if (out_full_name)
+            *out_full_name = ctx->cpp_context->lastGridFullName_.c_str();
+        if (out_package_name)
+            *out_package_name = ctx->cpp_context->lastGridPackageName_.c_str();
+        if (out_url)
+            *out_url = ctx->cpp_context->lastGridUrl_.c_str();
+        if (out_direct_download)
+            *out_direct_download = direct_download ? 1 : 0;
+        if (out_open_license)
+            *out_open_license = open_license ? 1 : 0;
+        if (out_available)
+            *out_available = available ? 1 : 0;
+
+        ctx->cpp_context->autoCloseDbIfNeeded();
+        return true;
+    } catch (const std::exception &e) {
+        proj_log_error(ctx, __FUNCTION__, e.what());
+    }
+    ctx->cpp_context->autoCloseDbIfNeeded();
     return false;
 }
 
@@ -653,10 +829,12 @@ PJ_OBJ_LIST *proj_query_geodetic_crs_from_datum(PJ_CONTEXT *ctx,
         for (const auto &obj : res) {
             objects.push_back(obj);
         }
+        ctx->cpp_context->autoCloseDbIfNeeded();
         return new PJ_OBJ_LIST(std::move(objects));
     } catch (const std::exception &e) {
         proj_log_error(ctx, __FUNCTION__, e.what());
     }
+    ctx->cpp_context->autoCloseDbIfNeeded();
     return nullptr;
 }
 
@@ -813,10 +991,12 @@ PJ_OBJ_LIST *proj_create_from_name(PJ_CONTEXT *ctx, const char *auth_name,
         for (const auto &obj : res) {
             objects.push_back(obj);
         }
+        ctx->cpp_context->autoCloseDbIfNeeded();
         return new PJ_OBJ_LIST(std::move(objects));
     } catch (const std::exception &e) {
         proj_log_error(ctx, __FUNCTION__, e.what());
     }
+    ctx->cpp_context->autoCloseDbIfNeeded();
     return nullptr;
 }
 
@@ -955,24 +1135,20 @@ PJ_OBJ_LIST *proj_get_non_deprecated(PJ_CONTEXT *ctx, const PJ *obj) {
         for (const auto &resObj : res) {
             objects.push_back(resObj);
         }
+        ctx->cpp_context->autoCloseDbIfNeeded();
         return new PJ_OBJ_LIST(std::move(objects));
     } catch (const std::exception &e) {
         proj_log_error(ctx, __FUNCTION__, e.what());
     }
+    ctx->cpp_context->autoCloseDbIfNeeded();
     return nullptr;
 }
 
 // ---------------------------------------------------------------------------
 
-/** \brief Return whether two objects are equivalent.
- *
- * @param obj Object (must not be NULL)
- * @param other Other object (must not be NULL)
- * @param criterion Comparison criterion
- * @return TRUE if they are equivalent
- */
-int proj_is_equivalent_to(const PJ *obj, const PJ *other,
-                          PJ_COMPARISON_CRITERION criterion) {
+static int proj_is_equivalent_to_internal(PJ_CONTEXT *ctx, const PJ *obj,
+                                          const PJ *other,
+                                          PJ_COMPARISON_CRITERION criterion) {
     assert(obj);
     assert(other);
     if (!obj->iso_obj) {
@@ -994,7 +1170,50 @@ int proj_is_equivalent_to(const PJ *obj, const PJ *other,
         return IComparable::Criterion::EQUIVALENT_EXCEPT_AXIS_ORDER_GEOGCRS;
     })(criterion);
 
-    return obj->iso_obj->isEquivalentTo(other->iso_obj.get(), cppCriterion);
+    int res = obj->iso_obj->isEquivalentTo(
+        other->iso_obj.get(), cppCriterion,
+        ctx ? getDBcontextNoException(ctx, "proj_is_equivalent_to_with_ctx")
+            : nullptr);
+    if (ctx && ctx->cpp_context) {
+        ctx->cpp_context->autoCloseDbIfNeeded();
+    }
+    return res;
+}
+
+// ---------------------------------------------------------------------------
+
+/** \brief Return whether two objects are equivalent.
+ *
+ * Use proj_is_equivalent_to_with_ctx() to be able to use database information.
+ *
+ * @param obj Object (must not be NULL)
+ * @param other Other object (must not be NULL)
+ * @param criterion Comparison criterion
+ * @return TRUE if they are equivalent
+ */
+int proj_is_equivalent_to(const PJ *obj, const PJ *other,
+                          PJ_COMPARISON_CRITERION criterion) {
+    return proj_is_equivalent_to_internal(nullptr, obj, other, criterion);
+}
+
+// ---------------------------------------------------------------------------
+
+/** \brief Return whether two objects are equivalent
+ *
+ * Possibly using database to check for name aliases.
+ *
+ * @param ctx PROJ context, or NULL for default context
+ * @param obj Object (must not be NULL)
+ * @param other Other object (must not be NULL)
+ * @param criterion Comparison criterion
+ * @return TRUE if they are equivalent
+ * @since 6.3
+ */
+int proj_is_equivalent_to_with_ctx(PJ_CONTEXT *ctx, const PJ *obj,
+                                   const PJ *other,
+                                   PJ_COMPARISON_CRITERION criterion) {
+    SANITIZE_CTX(ctx);
+    return proj_is_equivalent_to_internal(ctx, obj, other, criterion);
 }
 
 // ---------------------------------------------------------------------------
@@ -1026,9 +1245,28 @@ const char *proj_get_name(const PJ *obj) {
     if (!desc.has_value()) {
         return nullptr;
     }
-    // The object will still be alived after the function call.
+    // The object will still be alive after the function call.
     // cppcheck-suppress stlcstr
     return desc->c_str();
+}
+
+// ---------------------------------------------------------------------------
+
+/** \brief Get the remarks of an object.
+ *
+ * The lifetime of the returned string is the same as the input obj parameter.
+ *
+ * @param obj Object (must not be NULL)
+ * @return a string, or NULL in case of error.
+ */
+const char *proj_get_remarks(const PJ *obj) {
+    assert(obj);
+    if (!obj->iso_obj) {
+        return nullptr;
+    }
+    // The object will still be alive after the function call.
+    // cppcheck-suppress stlcstr
+    return obj->iso_obj->remarks().c_str();
 }
 
 // ---------------------------------------------------------------------------
@@ -1054,7 +1292,7 @@ const char *proj_get_id_auth_name(const PJ *obj, int index) {
     if (!codeSpace.has_value()) {
         return nullptr;
     }
-    // The object will still be alived after the function call.
+    // The object will still be alive after the function call.
     // cppcheck-suppress stlcstr
     return codeSpace->c_str();
 }
@@ -1123,10 +1361,10 @@ const char *proj_as_wkt(PJ_CONTEXT *ctx, const PJ *obj, PJ_WKT_TYPE type,
             return WKTFormatter::Convention::WKT2_2015;
         case PJ_WKT2_2015_SIMPLIFIED:
             return WKTFormatter::Convention::WKT2_2015_SIMPLIFIED;
-        case PJ_WKT2_2018:
-            return WKTFormatter::Convention::WKT2_2018;
-        case PJ_WKT2_2018_SIMPLIFIED:
-            return WKTFormatter::Convention::WKT2_2018_SIMPLIFIED;
+        case PJ_WKT2_2019:
+            return WKTFormatter::Convention::WKT2_2019;
+        case PJ_WKT2_2019_SIMPLIFIED:
+            return WKTFormatter::Convention::WKT2_2019_SIMPLIFIED;
         case PJ_WKT1_GDAL:
             return WKTFormatter::Convention::WKT1_GDAL;
         case PJ_WKT1_ESRI:
@@ -1157,13 +1395,22 @@ const char *proj_as_wkt(PJ_CONTEXT *ctx, const PJ *obj, PJ_WKT_TYPE type,
                 std::string msg("Unknown option :");
                 msg += *iter;
                 proj_log_error(ctx, __FUNCTION__, msg.c_str());
+                if (ctx->cpp_context) {
+                    ctx->cpp_context->autoCloseDbIfNeeded();
+                }
                 return nullptr;
             }
         }
         obj->lastWKT = obj->iso_obj->exportToWKT(formatter.get());
+        if (ctx->cpp_context) {
+            ctx->cpp_context->autoCloseDbIfNeeded();
+        }
         return obj->lastWKT.c_str();
     } catch (const std::exception &e) {
         proj_log_error(ctx, __FUNCTION__, e.what());
+        if (ctx->cpp_context) {
+            ctx->cpp_context->autoCloseDbIfNeeded();
+        }
         return nullptr;
     }
 }
@@ -1227,7 +1474,79 @@ const char *proj_as_proj_string(PJ_CONTEXT *ctx, const PJ *obj,
             }
         }
         obj->lastPROJString = exportable->exportToPROJString(formatter.get());
+        if (ctx->cpp_context) {
+            ctx->cpp_context->autoCloseDbIfNeeded();
+        }
         return obj->lastPROJString.c_str();
+    } catch (const std::exception &e) {
+        proj_log_error(ctx, __FUNCTION__, e.what());
+        if (ctx->cpp_context) {
+            ctx->cpp_context->autoCloseDbIfNeeded();
+        }
+        return nullptr;
+    }
+}
+
+// ---------------------------------------------------------------------------
+
+/** \brief Get a PROJJSON string representation of an object.
+ *
+ * The returned string is valid while the input obj parameter is valid,
+ * and until a next call to proj_as_proj_string() with the same input
+ * object.
+ *
+ * This function calls
+ * osgeo::proj::io::IJSONExportable::exportToJSON().
+ *
+ * This function may return NULL if the object is not compatible with an
+ * export to the requested type.
+ *
+ * @param ctx PROJ context, or NULL for default context
+ * @param obj Object (must not be NULL)
+ * @param options NULL-terminated list of strings with "KEY=VALUE" format. or
+ * NULL. Currently
+ * supported options are:
+ * <ul>
+ * <li>MULTILINE=YES/NO. Defaults to YES</li>
+ * <li>INDENTATION_WIDTH=number. Defauls to 2 (when multiline output is
+ * on).</li>
+ * <li>SCHEMA=string. URL to PROJJSON schema. Can be set to empty string to
+ * disable it.</li>
+ * </ul>
+ * @return a string, or NULL in case of error.
+ *
+ * @since 6.2
+ */
+const char *proj_as_projjson(PJ_CONTEXT *ctx, const PJ *obj,
+                             const char *const *options) {
+    SANITIZE_CTX(ctx);
+    assert(obj);
+    auto exportable = dynamic_cast<const IJSONExportable *>(obj->iso_obj.get());
+    if (!exportable) {
+        proj_log_error(ctx, __FUNCTION__, "Object type not exportable to JSON");
+        return nullptr;
+    }
+
+    auto dbContext = getDBcontextNoException(ctx, __FUNCTION__);
+    try {
+        auto formatter = JSONFormatter::create(dbContext);
+        for (auto iter = options; iter && iter[0]; ++iter) {
+            const char *value;
+            if ((value = getOptionValue(*iter, "MULTILINE="))) {
+                formatter->setMultiLine(ci_equal(value, "YES"));
+            } else if ((value = getOptionValue(*iter, "INDENTATION_WIDTH="))) {
+                formatter->setIndentationWidth(std::atoi(value));
+            } else if ((value = getOptionValue(*iter, "SCHEMA="))) {
+                formatter->setSchema(value);
+            } else {
+                std::string msg("Unknown option :");
+                msg += *iter;
+                proj_log_error(ctx, __FUNCTION__, msg.c_str());
+                return nullptr;
+            }
+        }
+        obj->lastJSONString = exportable->exportToJSON(formatter.get());
+        return obj->lastJSONString.c_str();
     } catch (const std::exception &e) {
         proj_log_error(ctx, __FUNCTION__, e.what());
         return nullptr;
@@ -1236,7 +1555,42 @@ const char *proj_as_proj_string(PJ_CONTEXT *ctx, const PJ *obj,
 
 // ---------------------------------------------------------------------------
 
+/** \brief Get the scope of an object.
+ *
+ * In case of multiple usages, this will be the one of first usage.
+ *
+ * The lifetime of the returned string is the same as the input obj parameter.
+ *
+ * @param obj Object (must not be NULL)
+ * @return a string, or NULL in case of error or missing scope.
+ */
+const char *proj_get_scope(const PJ *obj) {
+    assert(obj);
+    if (!obj->iso_obj) {
+        return nullptr;
+    }
+    auto objectUsage = dynamic_cast<const ObjectUsage *>(obj->iso_obj.get());
+    if (!objectUsage) {
+        return nullptr;
+    }
+    const auto &domains = objectUsage->domains();
+    if (domains.empty()) {
+        return nullptr;
+    }
+    const auto &scope = domains[0]->scope();
+    if (!scope.has_value()) {
+        return nullptr;
+    }
+    // The object will still be alive after the function call.
+    // cppcheck-suppress stlcstr
+    return scope->c_str();
+}
+
+// ---------------------------------------------------------------------------
+
 /** \brief Return the area of use of an object.
+ *
+ * In case of multiple usages, this will be the one of first usage.
  *
  * @param ctx PROJ context, or NULL for default context
  * @param obj Object (must not be NULL)
@@ -1490,6 +1844,9 @@ PJ *proj_crs_create_bound_crs_to_WGS84(PJ_CONTEXT *ctx, const PJ *crs,
                 std::string msg("Unknown option :");
                 msg += *iter;
                 proj_log_error(ctx, __FUNCTION__, msg.c_str());
+                if (ctx->cpp_context) {
+                    ctx->cpp_context->autoCloseDbIfNeeded();
+                }
                 return nullptr;
             }
         }
@@ -1497,6 +1854,66 @@ PJ *proj_crs_create_bound_crs_to_WGS84(PJ_CONTEXT *ctx, const PJ *crs,
                                       dbContext, allowIntermediateCRS));
     } catch (const std::exception &e) {
         proj_log_error(ctx, __FUNCTION__, e.what());
+        if (ctx->cpp_context) {
+            ctx->cpp_context->autoCloseDbIfNeeded();
+        }
+        return nullptr;
+    }
+}
+
+// ---------------------------------------------------------------------------
+
+/** \brief Returns a BoundCRS, with a transformation to a hub geographic 3D crs
+ * (use EPSG:4979 for WGS84 for example), using a grid.
+ *
+ * The returned object must be unreferenced with proj_destroy() after
+ * use.
+ * It should be used by at most one thread at a time.
+ *
+ * @param ctx PROJ context, or NULL for default context
+ * @param vert_crs Object of type VerticalCRS (must not be NULL)
+ * @param hub_geographic_3D_crs Object of type Geographic 3D CRS (must not be
+ * NULL)
+ * @param grid_name Grid name (typically a .gtx file)
+ * @return Object that must be unreferenced with proj_destroy(), or NULL
+ * in case of error.
+ * @since 6.3
+ */
+PJ *proj_crs_create_bound_vertical_crs(PJ_CONTEXT *ctx, const PJ *vert_crs,
+                                       const PJ *hub_geographic_3D_crs,
+                                       const char *grid_name) {
+    SANITIZE_CTX(ctx);
+    assert(vert_crs);
+    assert(hub_geographic_3D_crs);
+    assert(grid_name);
+    auto l_crs = std::dynamic_pointer_cast<VerticalCRS>(vert_crs->iso_obj);
+    if (!l_crs) {
+        proj_log_error(ctx, __FUNCTION__, "vert_crs is not a VerticalCRS");
+        return nullptr;
+    }
+    auto hub_crs =
+        std::dynamic_pointer_cast<CRS>(hub_geographic_3D_crs->iso_obj);
+    if (!hub_crs) {
+        proj_log_error(ctx, __FUNCTION__, "hub_geographic_3D_crs is not a CRS");
+        return nullptr;
+    }
+    try {
+        auto nnCRS = NN_NO_CHECK(l_crs);
+        auto nnHubCRS = NN_NO_CHECK(hub_crs);
+        auto transformation =
+            Transformation::createGravityRelatedHeightToGeographic3D(
+                PropertyMap().set(IdentifiedObject::NAME_KEY,
+                                  "unknown to " + hub_crs->nameStr() +
+                                      " ellipsoidal height"),
+                nnCRS, nnHubCRS, nullptr, std::string(grid_name),
+                std::vector<PositionalAccuracyNNPtr>());
+        return pj_obj_create(ctx,
+                             BoundCRS::create(nnCRS, nnHubCRS, transformation));
+    } catch (const std::exception &e) {
+        proj_log_error(ctx, __FUNCTION__, e.what());
+        if (ctx->cpp_context) {
+            ctx->cpp_context->autoCloseDbIfNeeded();
+        }
         return nullptr;
     }
 }
@@ -1779,17 +2196,36 @@ PJ *proj_get_target_crs(PJ_CONTEXT *ctx, const PJ *obj) {
  * The candidate CRSs are either hard-coded, or looked in the database when
  * it is available.
  *
+ * Note that the implementation uses a set of heuristics to have a good
+ * compromise of successful identifications over execution time. It might miss
+ * legitimate matches in some circumstances.
+ *
  * The method returns a list of matching reference CRS, and the percentage
  * (0-100) of confidence in the match. The list is sorted by decreasing
  * confidence.
- *
- * 100% means that the name of the reference entry
+ * <ul>
+ * <li>100% means that the name of the reference entry
  * perfectly matches the CRS name, and both are equivalent. In which case a
  * single result is returned.
- * 90% means that CRS are equivalent, but the names are not exactly the same.
- * 70% means that CRS are equivalent), but the names do not match at all.
- * 25% means that the CRS are not equivalent, but there is some similarity in
- * the names.
+ * Note: in the case of a GeographicCRS whose axis
+ * order is implicit in the input definition (for example ESRI WKT), then axis
+ * order is ignored for the purpose of identification. That is the CRS built
+ * from
+ * GEOGCS["GCS_WGS_1984",DATUM["D_WGS_1984",SPHEROID["WGS_1984",6378137.0,298.257223563]],
+ * PRIMEM["Greenwich",0.0],UNIT["Degree",0.0174532925199433]]
+ * will be identified to EPSG:4326, but will not pass a
+ * isEquivalentTo(EPSG_4326, util::IComparable::Criterion::EQUIVALENT) test,
+ * but rather isEquivalentTo(EPSG_4326,
+ * util::IComparable::Criterion::EQUIVALENT_EXCEPT_AXIS_ORDER_GEOGCRS)
+ * </li>
+ * <li>90% means that CRS are equivalent, but the names are not exactly the
+ * same.</li>
+ * <li>70% means that CRS are equivalent), but the names do not match at
+ * all.</li>
+ * <li>25% means that the CRS are not equivalent, but there is some similarity
+ * in
+ * the names.</li>
+ * </ul>
  * Other confidence values may be returned by some specialized implementations.
  *
  * This is implemented for GeodeticCRS, ProjectedCRS, VerticalCRS and
@@ -1841,12 +2277,14 @@ PJ_OBJ_LIST *proj_identify(PJ_CONTEXT *ctx, const PJ *obj,
                 *out_confidence = confidenceTemp;
                 confidenceTemp = nullptr;
             }
+            ctx->cpp_context->autoCloseDbIfNeeded();
             return ret.release();
         } catch (const std::exception &e) {
             delete[] confidenceTemp;
             proj_log_error(ctx, __FUNCTION__, e.what());
         }
     }
+    ctx->cpp_context->autoCloseDbIfNeeded();
     return nullptr;
 }
 
@@ -1870,10 +2308,13 @@ void proj_int_list_destroy(int *list) { delete[] list; }
 PROJ_STRING_LIST proj_get_authorities_from_database(PJ_CONTEXT *ctx) {
     SANITIZE_CTX(ctx);
     try {
-        return to_string_list(getDBcontext(ctx)->getAuthorities());
+        auto ret = to_string_list(getDBcontext(ctx)->getAuthorities());
+        ctx->cpp_context->autoCloseDbIfNeeded();
+        return ret;
     } catch (const std::exception &e) {
         proj_log_error(ctx, __FUNCTION__, e.what());
     }
+    ctx->cpp_context->autoCloseDbIfNeeded();
     return nullptr;
 }
 
@@ -1907,12 +2348,15 @@ PROJ_STRING_LIST proj_get_codes_from_database(PJ_CONTEXT *ctx,
         if (!valid) {
             return nullptr;
         }
-        return to_string_list(
+        auto ret = to_string_list(
             factory->getAuthorityCodes(typeInternal, allow_deprecated != 0));
+        ctx->cpp_context->autoCloseDbIfNeeded();
+        return ret;
 
     } catch (const std::exception &e) {
         proj_log_error(ctx, __FUNCTION__, e.what());
     }
+    ctx->cpp_context->autoCloseDbIfNeeded();
     return nullptr;
 }
 
@@ -2105,6 +2549,7 @@ proj_get_crs_info_list_from_database(PJ_CONTEXT *ctx, const char *auth_name,
         ret[i] = nullptr;
         if (out_result_count)
             *out_result_count = i;
+        ctx->cpp_context->autoCloseDbIfNeeded();
         return ret;
     } catch (const std::exception &e) {
         proj_log_error(ctx, __FUNCTION__, e.what());
@@ -2115,6 +2560,7 @@ proj_get_crs_info_list_from_database(PJ_CONTEXT *ctx, const char *auth_name,
         if (out_result_count)
             *out_result_count = 0;
     }
+    ctx->cpp_context->autoCloseDbIfNeeded();
     return nullptr;
 }
 
@@ -2229,12 +2675,18 @@ int proj_coordoperation_get_method_info(PJ_CONTEXT *ctx,
 // ---------------------------------------------------------------------------
 
 //! @cond Doxygen_Suppress
-static PropertyMap createPropertyMapName(const char *c_name) {
+static PropertyMap createPropertyMapName(const char *c_name,
+                                         const char *auth_name = nullptr,
+                                         const char *code = nullptr) {
     std::string name(c_name ? c_name : "unnamed");
     PropertyMap properties;
     if (ends_with(name, " (deprecated)")) {
         name.resize(name.size() - strlen(" (deprecated)"));
         properties.set(common::IdentifiedObject::DEPRECATED_KEY, true);
+    }
+    if (auth_name && code) {
+        properties.set(metadata::Identifier::CODESPACE_KEY, auth_name);
+        properties.set(metadata::Identifier::CODE_KEY, code);
     }
     return properties.set(common::IdentifiedObject::NAME_KEY, name);
 }
@@ -2316,16 +2768,19 @@ static GeodeticReferenceFrameNNPtr createGeodeticReferenceFrame(
                 if (metadata::Identifier::isEquivalentName(
                         datumName.c_str(), refDatum->nameStr().c_str())) {
                     datumName = refDatum->nameStr();
-                }
-            } else {
-                std::string outTableName;
-                std::string authNameFromAlias;
-                std::string codeFromAlias;
-                auto officialName = authFactory->getOfficialNameFromAlias(
-                    datumName, "geodetic_datum", std::string(), true,
-                    outTableName, authNameFromAlias, codeFromAlias);
-                if (!officialName.empty()) {
-                    datumName = officialName;
+                } else if (refDatum->identifiers().size() == 1) {
+                    const auto &id = refDatum->identifiers()[0];
+                    const auto aliases =
+                        authFactory->databaseContext()->getAliases(
+                            *id->codeSpace(), id->code(), refDatum->nameStr(),
+                            "geodetic_datum", std::string());
+                    for (const auto &alias : aliases) {
+                        if (metadata::Identifier::isEquivalentName(
+                                datumName.c_str(), alias.c_str())) {
+                            datumName = refDatum->nameStr();
+                            break;
+                        }
+                    }
                 }
             }
         }
@@ -2390,6 +2845,9 @@ PJ *proj_create_geographic_crs(PJ_CONTEXT *ctx, const char *crs_name,
     } catch (const std::exception &e) {
         proj_log_error(ctx, __FUNCTION__, e.what());
     }
+    if (ctx->cpp_context) {
+        ctx->cpp_context->autoCloseDbIfNeeded();
+    }
     return nullptr;
 }
 
@@ -2431,6 +2889,9 @@ PJ *proj_create_geographic_crs_from_datum(PJ_CONTEXT *ctx, const char *crs_name,
         return pj_obj_create(ctx, geogCRS);
     } catch (const std::exception &e) {
         proj_log_error(ctx, __FUNCTION__, e.what());
+    }
+    if (ctx->cpp_context) {
+        ctx->cpp_context->autoCloseDbIfNeeded();
     }
     return nullptr;
 }
@@ -2534,6 +2995,66 @@ PJ *proj_create_geocentric_crs_from_datum(PJ_CONTEXT *ctx, const char *crs_name,
 
 // ---------------------------------------------------------------------------
 
+/** \brief Create a DerivedGeograhicCRS.
+ *
+ * The returned object must be unreferenced with proj_destroy() after
+ * use.
+ * It should be used by at most one thread at a time.
+ *
+ * @param ctx PROJ context, or NULL for default context
+ * @param crs_name Name of the GeographicCRS. Or NULL
+ * @param base_geographic_crs Base Geographic CRS. Must not be NULL.
+ * @param conversion Conversion from the base Geographic to the
+ * DerivedGeograhicCRS. Must not be NULL.
+ * @param ellipsoidal_cs Coordinate system. Must not be NULL.
+ *
+ * @return Object of type GeodeticCRS that must be unreferenced with
+ * proj_destroy(), or NULL in case of error.
+ *
+ * @since 7.0
+ */
+PJ *proj_create_derived_geographic_crs(PJ_CONTEXT *ctx, const char *crs_name,
+                                       const PJ *base_geographic_crs,
+                                       const PJ *conversion,
+                                       const PJ *ellipsoidal_cs) {
+    SANITIZE_CTX(ctx);
+    auto base_crs =
+        std::dynamic_pointer_cast<GeographicCRS>(base_geographic_crs->iso_obj);
+    auto conversion_cpp =
+        std::dynamic_pointer_cast<Conversion>(conversion->iso_obj);
+    auto cs = std::dynamic_pointer_cast<EllipsoidalCS>(ellipsoidal_cs->iso_obj);
+    if (!base_crs || !conversion_cpp || !cs) {
+        return nullptr;
+    }
+    try {
+        auto derivedCRS = DerivedGeographicCRS::create(
+            createPropertyMapName(crs_name), NN_NO_CHECK(base_crs),
+            NN_NO_CHECK(conversion_cpp), NN_NO_CHECK(cs));
+        return pj_obj_create(ctx, derivedCRS);
+    } catch (const std::exception &e) {
+        proj_log_error(ctx, __FUNCTION__, e.what());
+    }
+    return nullptr;
+}
+
+// ---------------------------------------------------------------------------
+
+/** \brief Return whether a CRS is a Derived CRS.
+ *
+ * @param ctx PROJ context, or NULL for default context
+ * @param crs CRS. Must not be NULL.
+ *
+ * @return whether a CRS is a Derived CRS.
+ *
+ * @since 7.0
+ */
+int proj_is_derived_crs(PJ_CONTEXT *ctx, const PJ *crs) {
+    SANITIZE_CTX(ctx);
+    return dynamic_cast<DerivedCRS *>(crs->iso_obj.get()) != nullptr;
+}
+
+// ---------------------------------------------------------------------------
+
 /** \brief Create a VerticalCRS
  *
  * The returned object must be unreferenced with proj_destroy() after
@@ -2554,15 +3075,77 @@ PJ *proj_create_vertical_crs(PJ_CONTEXT *ctx, const char *crs_name,
                              const char *datum_name, const char *linear_units,
                              double linear_units_conv) {
 
+    return proj_create_vertical_crs_ex(
+        ctx, crs_name, datum_name, nullptr, nullptr, linear_units,
+        linear_units_conv, nullptr, nullptr, nullptr, nullptr, nullptr);
+}
+
+// ---------------------------------------------------------------------------
+
+/** \brief Create a VerticalCRS
+ *
+ * The returned object must be unreferenced with proj_destroy() after
+ * use.
+ * It should be used by at most one thread at a time.
+ *
+ * This is an extented (_ex) version of proj_create_vertical_crs() that adds
+ * the capability of defining a geoid model.
+ *
+ * @param ctx PROJ context, or NULL for default context
+ * @param crs_name Name of the GeographicCRS. Or NULL
+ * @param datum_name Name of the VerticalReferenceFrame. Or NULL
+ * @param datum_auth_name Authority name of the VerticalReferenceFrame. Or NULL
+ * @param datum_code Code of the VerticalReferenceFrame. Or NULL
+ * @param linear_units Name of the linear units. Or NULL for Metre
+ * @param linear_units_conv Conversion factor from the linear unit to metre. Or
+ * 0 for Metre if linear_units == NULL. Otherwise should be not NULL
+ * @param geoid_model_name Geoid model name, or NULL. Can be a name from the
+ * geoid_model name or a string "PROJ foo.gtx"
+ * @param geoid_model_auth_name Authority name of the transformation for
+ * the geoid model. or NULL
+ * @param geoid_model_code Code of the transformation for
+ * the geoid model. or NULL
+ * @param geoid_geog_crs Geographic CRS for the geoid transformation, or NULL.
+ * @param options should be set to NULL for now
+ * @return Object of type VerticalCRS that must be unreferenced with
+ * proj_destroy(), or NULL in case of error.
+ */
+PJ *proj_create_vertical_crs_ex(
+    PJ_CONTEXT *ctx, const char *crs_name, const char *datum_name,
+    const char *datum_auth_name, const char *datum_code,
+    const char *linear_units, double linear_units_conv,
+    const char *geoid_model_name, const char *geoid_model_auth_name,
+    const char *geoid_model_code, const PJ *geoid_geog_crs,
+    const char *const *options) {
     SANITIZE_CTX(ctx);
+    (void)options;
     try {
         const UnitOfMeasure linearUnit(
             createLinearUnit(linear_units, linear_units_conv));
-        auto datum =
-            VerticalReferenceFrame::create(createPropertyMapName(datum_name));
-        auto vertCRS = VerticalCRS::create(
-            createPropertyMapName(crs_name), datum,
-            cs::VerticalCS::createGravityRelatedHeight(linearUnit));
+        auto datum = VerticalReferenceFrame::create(
+            createPropertyMapName(datum_name, datum_auth_name, datum_code));
+        auto props = createPropertyMapName(crs_name);
+        auto cs = cs::VerticalCS::createGravityRelatedHeight(linearUnit);
+        if (geoid_model_name) {
+            auto propsModel = createPropertyMapName(
+                geoid_model_name, geoid_model_auth_name, geoid_model_code);
+            const auto vertCRSWithoutGeoid =
+                VerticalCRS::create(props, datum, cs);
+            const auto interpCRS =
+                geoid_geog_crs && std::dynamic_pointer_cast<GeographicCRS>(
+                                      geoid_geog_crs->iso_obj)
+                    ? std::dynamic_pointer_cast<CRS>(geoid_geog_crs->iso_obj)
+                    : nullptr;
+            const auto model(Transformation::create(
+                propsModel, vertCRSWithoutGeoid,
+                GeographicCRS::EPSG_4979, // arbitrarily chosen. Ignored
+                interpCRS,
+                OperationMethod::create(PropertyMap(),
+                                        std::vector<OperationParameterNNPtr>()),
+                {}, {}));
+            props.set("GEOID_MODEL", model);
+        }
+        auto vertCRS = VerticalCRS::create(props, datum, cs);
         return pj_obj_create(ctx, vertCRS);
     } catch (const std::exception &e) {
         proj_log_error(ctx, __FUNCTION__, e.what());
@@ -2825,7 +3408,7 @@ PJ *proj_crs_alter_cs_linear_unit(PJ_CONTEXT *ctx, const PJ *obj,
 
 // ---------------------------------------------------------------------------
 
-/** \brief Return a copy of the CRS with the lineaer units of the parameters
+/** \brief Return a copy of the CRS with the linear units of the parameters
  * of its conversion modified.
  *
  * The CRS must be or contain a ProjectedCRS, VerticalCRS or a GeocentricCRS.
@@ -2868,6 +3451,193 @@ PJ *proj_crs_alter_parameters_linear_unit(PJ_CONTEXT *ctx, const PJ *obj,
                                       linearUnit, convert_to_new_unit == TRUE));
     } catch (const std::exception &e) {
         proj_log_error(ctx, __FUNCTION__, e.what());
+        return nullptr;
+    }
+}
+
+// ---------------------------------------------------------------------------
+
+/** \brief Create a 3D CRS from an existing 2D CRS.
+ *
+ * The new axis will be ellipsoidal height, oriented upwards, and with metre
+ * units.
+ *
+ * See osgeo::proj::crs::CRS::promoteTo3D().
+ *
+ * The returned object must be unreferenced with proj_destroy() after
+ * use.
+ * It should be used by at most one thread at a time.
+ *
+ * @param ctx PROJ context, or NULL for default context
+ * @param crs_3D_name CRS name. Or NULL (in which case the name of crs_2D
+ * will be used)
+ * @param crs_2D 2D CRS to be "promoted" to 3D. Must not be NULL.
+ *
+ * @return Object that must be unreferenced with
+ * proj_destroy(), or NULL in case of error.
+ * @since 6.3
+ */
+PJ *proj_crs_promote_to_3D(PJ_CONTEXT *ctx, const char *crs_3D_name,
+                           const PJ *crs_2D) {
+    SANITIZE_CTX(ctx);
+    auto cpp_2D_crs = dynamic_cast<const CRS *>(crs_2D->iso_obj.get());
+    if (!cpp_2D_crs) {
+        proj_log_error(ctx, __FUNCTION__, "crs_2D is not a CRS");
+        return nullptr;
+    }
+    try {
+        auto dbContext = getDBcontextNoException(ctx, __FUNCTION__);
+        return pj_obj_create(
+            ctx, cpp_2D_crs->promoteTo3D(crs_3D_name ? std::string(crs_3D_name)
+                                                     : cpp_2D_crs->nameStr(),
+                                         dbContext));
+    } catch (const std::exception &e) {
+        proj_log_error(ctx, __FUNCTION__, e.what());
+        if (ctx->cpp_context) {
+            ctx->cpp_context->autoCloseDbIfNeeded();
+        }
+        return nullptr;
+    }
+}
+
+// ---------------------------------------------------------------------------
+
+/** \brief Create a projected 3D CRS from an existing projected 2D CRS.
+ *
+ * The passed projected_2D_crs is used so that its name is replaced by
+ * crs_name and its base geographic CRS is replaced by geog_3D_crs. The vertical
+ * axis of geog_3D_crs (ellipsoidal height) will be added as the 3rd axis of
+ * the resulting projected 3D CRS.
+ * Normally, the passed geog_3D_crs should be the 3D counterpart of the original
+ * 2D base geographic CRS of projected_2D_crs, but such no check is done.
+ *
+ * It is also possible to invoke this function with a NULL geog_3D_crs. In which
+ * case, the existing base geographic 2D CRS of projected_2D_crs will be
+ * automatically promoted to 3D by assuming a 3rd axis being an ellipsoidal
+ * height, oriented upwards, and with metre units. This is equivalent to using
+ * proj_crs_promote_to_3D().
+ *
+ * The returned object must be unreferenced with proj_destroy() after
+ * use.
+ * It should be used by at most one thread at a time.
+ *
+ * @param ctx PROJ context, or NULL for default context
+ * @param crs_name CRS name. Or NULL (in which case the name of projected_2D_crs
+ * will be used)
+ * @param projected_2D_crs Projected 2D CRS to be "promoted" to 3D. Must not be
+ * NULL.
+ * @param geog_3D_crs Base geographic 3D CRS for the new CRS. May be NULL.
+ *
+ * @return Object that must be unreferenced with
+ * proj_destroy(), or NULL in case of error.
+ * @since 6.3
+ */
+PJ *proj_crs_create_projected_3D_crs_from_2D(PJ_CONTEXT *ctx,
+                                             const char *crs_name,
+                                             const PJ *projected_2D_crs,
+                                             const PJ *geog_3D_crs) {
+    SANITIZE_CTX(ctx);
+    auto cpp_projected_2D_crs =
+        dynamic_cast<const ProjectedCRS *>(projected_2D_crs->iso_obj.get());
+    if (!cpp_projected_2D_crs) {
+        proj_log_error(ctx, __FUNCTION__,
+                       "projected_2D_crs is not a Projected CRS");
+        return nullptr;
+    }
+    const auto &oldCS = cpp_projected_2D_crs->coordinateSystem();
+    const auto &oldCSAxisList = oldCS->axisList();
+
+    if (geog_3D_crs && geog_3D_crs->iso_obj) {
+        auto cpp_geog_3D_CRS =
+            std::dynamic_pointer_cast<GeographicCRS>(geog_3D_crs->iso_obj);
+        if (!cpp_geog_3D_CRS) {
+            proj_log_error(ctx, __FUNCTION__,
+                           "geog_3D_crs is not a Geographic CRS");
+            return nullptr;
+        }
+
+        const auto &geogCS = cpp_geog_3D_CRS->coordinateSystem();
+        const auto &geogCSAxisList = geogCS->axisList();
+        if (geogCSAxisList.size() != 3) {
+            proj_log_error(ctx, __FUNCTION__,
+                           "geog_3D_crs is not a Geographic 3D CRS");
+            return nullptr;
+        }
+        try {
+            auto newCS =
+                cs::CartesianCS::create(PropertyMap(), oldCSAxisList[0],
+                                        oldCSAxisList[1], geogCSAxisList[2]);
+            return pj_obj_create(
+                ctx,
+                ProjectedCRS::create(
+                    createPropertyMapName(
+                        crs_name ? crs_name
+                                 : cpp_projected_2D_crs->nameStr().c_str()),
+                    NN_NO_CHECK(cpp_geog_3D_CRS),
+                    cpp_projected_2D_crs->derivingConversion(), newCS));
+        } catch (const std::exception &e) {
+            proj_log_error(ctx, __FUNCTION__, e.what());
+            if (ctx->cpp_context) {
+                ctx->cpp_context->autoCloseDbIfNeeded();
+            }
+            return nullptr;
+        }
+    } else {
+        try {
+            auto dbContext = getDBcontextNoException(ctx, __FUNCTION__);
+            return pj_obj_create(ctx,
+                                 cpp_projected_2D_crs->promoteTo3D(
+                                     crs_name ? std::string(crs_name)
+                                              : cpp_projected_2D_crs->nameStr(),
+                                     dbContext));
+        } catch (const std::exception &e) {
+            proj_log_error(ctx, __FUNCTION__, e.what());
+            if (ctx->cpp_context) {
+                ctx->cpp_context->autoCloseDbIfNeeded();
+            }
+            return nullptr;
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+
+/** \brief Create a 2D CRS from an existing 3D CRS.
+ *
+ * See osgeo::proj::crs::CRS::demoteTo2D().
+ *
+ * The returned object must be unreferenced with proj_destroy() after
+ * use.
+ * It should be used by at most one thread at a time.
+ *
+ * @param ctx PROJ context, or NULL for default context
+ * @param crs_2D_name CRS name. Or NULL (in which case the name of crs_3D
+ * will be used)
+ * @param crs_3D 3D CRS to be "demoted" to 2D. Must not be NULL.
+ *
+ * @return Object that must be unreferenced with
+ * proj_destroy(), or NULL in case of error.
+ * @since 6.3
+ */
+PJ *proj_crs_demote_to_2D(PJ_CONTEXT *ctx, const char *crs_2D_name,
+                          const PJ *crs_3D) {
+    SANITIZE_CTX(ctx);
+    auto cpp_3D_crs = dynamic_cast<const CRS *>(crs_3D->iso_obj.get());
+    if (!cpp_3D_crs) {
+        proj_log_error(ctx, __FUNCTION__, "crs_3D is not a CRS");
+        return nullptr;
+    }
+    try {
+        auto dbContext = getDBcontextNoException(ctx, __FUNCTION__);
+        return pj_obj_create(
+            ctx, cpp_3D_crs->demoteTo2D(crs_2D_name ? std::string(crs_2D_name)
+                                                    : cpp_3D_crs->nameStr(),
+                                        dbContext));
+    } catch (const std::exception &e) {
+        proj_log_error(ctx, __FUNCTION__, e.what());
+        if (ctx->cpp_context) {
+            ctx->cpp_context->autoCloseDbIfNeeded();
+        }
         return nullptr;
     }
 }
@@ -3431,6 +4201,58 @@ PJ *proj_create_ellipsoidal_2D_cs(PJ_CONTEXT *ctx,
             return pj_obj_create(
                 ctx, EllipsoidalCS::createLatitudeLongitude(
                          createAngularUnit(unit_name, unit_conv_factor)));
+        }
+    } catch (const std::exception &e) {
+        proj_log_error(ctx, __FUNCTION__, e.what());
+    }
+    return nullptr;
+}
+
+// ---------------------------------------------------------------------------
+
+/** \brief Instantiate a Ellipsoidal 3D
+ *
+ * The returned object must be unreferenced with proj_destroy() after
+ * use.
+ * It should be used by at most one thread at a time.
+ *
+ * @param ctx PROJ context, or NULL for default context
+ * @param type Coordinate system type.
+ * @param horizontal_angular_unit_name Horizontal angular unit name.
+ * @param horizontal_angular_unit_conv_factor Horizontal angular unit conversion
+ * factor to SI.
+ * @param vertical_linear_unit_name Vertical linear unit name.
+ * @param vertical_linear_unit_conv_factor Vertical linear unit conversion
+ * factor to SI.
+ *
+ * @return Object that must be unreferenced with
+ * proj_destroy(), or NULL in case of error.
+ * @since 6.3
+ */
+
+PJ *proj_create_ellipsoidal_3D_cs(PJ_CONTEXT *ctx,
+                                  PJ_ELLIPSOIDAL_CS_3D_TYPE type,
+                                  const char *horizontal_angular_unit_name,
+                                  double horizontal_angular_unit_conv_factor,
+                                  const char *vertical_linear_unit_name,
+                                  double vertical_linear_unit_conv_factor) {
+    try {
+        switch (type) {
+        case PJ_ELLPS3D_LONGITUDE_LATITUDE_HEIGHT:
+            return pj_obj_create(
+                ctx, EllipsoidalCS::createLongitudeLatitudeEllipsoidalHeight(
+                         createAngularUnit(horizontal_angular_unit_name,
+                                           horizontal_angular_unit_conv_factor),
+                         createLinearUnit(vertical_linear_unit_name,
+                                          vertical_linear_unit_conv_factor)));
+
+        case PJ_ELLPS3D_LATITUDE_LONGITUDE_HEIGHT:
+            return pj_obj_create(
+                ctx, EllipsoidalCS::createLatitudeLongitudeEllipsoidalHeight(
+                         createAngularUnit(horizontal_angular_unit_name,
+                                           horizontal_angular_unit_conv_factor),
+                         createLinearUnit(vertical_linear_unit_name,
+                                          vertical_linear_unit_conv_factor)));
         }
     } catch (const std::exception &e) {
         proj_log_error(ctx, __FUNCTION__, e.what());
@@ -5700,6 +6522,76 @@ PJ *proj_create_conversion_equal_earth(PJ_CONTEXT *ctx, double center_long,
     }
     return nullptr;
 }
+
+// ---------------------------------------------------------------------------
+
+/** \brief Instantiate a conversion based on the Vertical Perspective projection
+ * method.
+ *
+ * See osgeo::proj::operation::Conversion::createVerticalPerspective().
+ *
+ * Linear parameters are expressed in (linear_unit_name,
+ * linear_unit_conv_factor).
+ * Angular parameters are expressed in (ang_unit_name, ang_unit_conv_factor).
+ *
+ * @since 6.3
+ */
+PJ *proj_create_conversion_vertical_perspective(
+    PJ_CONTEXT *ctx, double topo_origin_lat, double topo_origin_long,
+    double topo_origin_height, double view_point_height, double false_easting,
+    double false_northing, const char *ang_unit_name,
+    double ang_unit_conv_factor, const char *linear_unit_name,
+    double linear_unit_conv_factor) {
+    SANITIZE_CTX(ctx);
+    try {
+        UnitOfMeasure linearUnit(
+            createLinearUnit(linear_unit_name, linear_unit_conv_factor));
+        UnitOfMeasure angUnit(
+            createAngularUnit(ang_unit_name, ang_unit_conv_factor));
+        auto conv = Conversion::createVerticalPerspective(
+            PropertyMap(), Angle(topo_origin_lat, angUnit),
+            Angle(topo_origin_long, angUnit),
+            Length(topo_origin_height, linearUnit),
+            Length(view_point_height, linearUnit),
+            Length(false_easting, linearUnit),
+            Length(false_northing, linearUnit));
+        return proj_create_conversion(ctx, conv);
+    } catch (const std::exception &e) {
+        proj_log_error(ctx, __FUNCTION__, e.what());
+    }
+    return nullptr;
+}
+
+// ---------------------------------------------------------------------------
+
+/** \brief Instantiate a conversion based on the Pole Rotation method, using the
+ * conventions of the GRIB 1 and GRIB 2 data formats.
+ *
+ * See osgeo::proj::operation::Conversion::createPoleRotationGRIBConvention().
+ *
+ * Linear parameters are expressed in (linear_unit_name,
+ * linear_unit_conv_factor).
+ * Angular parameters are expressed in (ang_unit_name, ang_unit_conv_factor).
+ */
+PJ *proj_create_conversion_pole_rotation_grib_convention(
+    PJ_CONTEXT *ctx, double south_pole_lat_in_unrotated_crs,
+    double south_pole_long_in_unrotated_crs, double axis_rotation,
+    const char *ang_unit_name, double ang_unit_conv_factor) {
+    SANITIZE_CTX(ctx);
+    try {
+        UnitOfMeasure angUnit(
+            createAngularUnit(ang_unit_name, ang_unit_conv_factor));
+        auto conv = Conversion::createPoleRotationGRIBConvention(
+            PropertyMap(), Angle(south_pole_lat_in_unrotated_crs, angUnit),
+            Angle(south_pole_long_in_unrotated_crs, angUnit),
+            Angle(axis_rotation, angUnit));
+        return proj_create_conversion(ctx, conv);
+    } catch (const std::exception &e) {
+        proj_log_error(ctx, __FUNCTION__, e.what());
+    }
+    return nullptr;
+}
+
 /* END: Generated by scripts/create_c_api_projections.py*/
 
 // ---------------------------------------------------------------------------
@@ -5716,6 +6608,7 @@ PJ *proj_create_conversion_equal_earth(PJ_CONTEXT *ctx, double center_long,
 
 int proj_coordoperation_is_instantiable(PJ_CONTEXT *ctx,
                                         const PJ *coordoperation) {
+    SANITIZE_CTX(ctx);
     assert(coordoperation);
     auto op = dynamic_cast<const CoordinateOperation *>(
         coordoperation->iso_obj.get());
@@ -5726,8 +6619,18 @@ int proj_coordoperation_is_instantiable(PJ_CONTEXT *ctx,
     }
     auto dbContext = getDBcontextNoException(ctx, __FUNCTION__);
     try {
-        return op->isPROJInstantiable(dbContext) ? 1 : 0;
+        auto ret = op->isPROJInstantiable(
+                       dbContext, proj_context_is_network_enabled(ctx) != false)
+                       ? 1
+                       : 0;
+        if (ctx->cpp_context) {
+            ctx->cpp_context->autoCloseDbIfNeeded();
+        }
+        return ret;
     } catch (const std::exception &) {
+        if (ctx->cpp_context) {
+            ctx->cpp_context->autoCloseDbIfNeeded();
+        }
         return 0;
     }
 }
@@ -5751,6 +6654,7 @@ int proj_coordoperation_is_instantiable(PJ_CONTEXT *ctx,
 
 int proj_coordoperation_has_ballpark_transformation(PJ_CONTEXT *ctx,
                                                     const PJ *coordoperation) {
+    SANITIZE_CTX(ctx);
     assert(coordoperation);
     auto op = dynamic_cast<const CoordinateOperation *>(
         coordoperation->iso_obj.get());
@@ -6030,14 +6934,21 @@ int proj_coordoperation_get_grid_used_count(PJ_CONTEXT *ctx,
     try {
         if (!coordoperation->gridsNeededAsked) {
             coordoperation->gridsNeededAsked = true;
-            const auto gridsNeeded = co->gridsNeeded(dbContext);
+            const auto gridsNeeded = co->gridsNeeded(
+                dbContext, proj_context_is_network_enabled(ctx) != false);
             for (const auto &gridDesc : gridsNeeded) {
                 coordoperation->gridsNeeded.emplace_back(gridDesc);
             }
         }
+        if (ctx->cpp_context) {
+            ctx->cpp_context->autoCloseDbIfNeeded();
+        }
         return static_cast<int>(coordoperation->gridsNeeded.size());
     } catch (const std::exception &e) {
         proj_log_error(ctx, __FUNCTION__, e.what());
+        if (ctx->cpp_context) {
+            ctx->cpp_context->autoCloseDbIfNeeded();
+        }
         return 0;
     }
 }
@@ -6144,7 +7055,7 @@ struct PJ_OPERATION_FACTORY_CONTEXT {
  * If authority is set to "any", then coordinate
  * operations from any authority will be searched
  * If authority is a non-empty string different of "any",
- * then coordinate operatiosn will be searched only in that authority namespace.
+ * then coordinate operations will be searched only in that authority namespace.
  *
  * @param ctx Context, or NULL for default context.
  * @param authority Name of authority to which to restrict the search of
@@ -6165,6 +7076,7 @@ proj_create_operation_factory_context(PJ_CONTEXT *ctx, const char *authority) {
                 std::string(authority ? authority : ""));
             auto operationContext =
                 CoordinateOperationContext::create(authFactory, nullptr, 0.0);
+            ctx->cpp_context->autoCloseDbIfNeeded();
             return new PJ_OPERATION_FACTORY_CONTEXT(
                 std::move(operationContext));
         } else {
@@ -6175,6 +7087,9 @@ proj_create_operation_factory_context(PJ_CONTEXT *ctx, const char *authority) {
         }
     } catch (const std::exception &e) {
         proj_log_error(ctx, __FUNCTION__, e.what());
+    }
+    if (ctx->cpp_context) {
+        ctx->cpp_context->autoCloseDbIfNeeded();
     }
     return nullptr;
 }
@@ -6357,6 +7272,12 @@ void PROJ_DLL proj_operation_factory_context_set_grid_availability_use(
                 CoordinateOperationContext::GridAvailabilityUse::
                     IGNORE_GRID_AVAILABILITY);
             break;
+
+        case PROJ_GRID_AVAILABILITY_KNOWN_AVAILABLE:
+            factory_ctx->operationContext->setGridAvailabilityUse(
+                CoordinateOperationContext::GridAvailabilityUse::
+                    KNOWN_AVAILABLE);
+            break;
         }
     } catch (const std::exception &e) {
         proj_log_error(ctx, __FUNCTION__, e.what());
@@ -6465,6 +7386,26 @@ void proj_operation_factory_context_set_allowed_intermediate_crs(
 
 // ---------------------------------------------------------------------------
 
+/** \brief Set whether transformations that are superseded (but not deprecated)
+ * should be discarded.
+ *
+ * @param ctx PROJ context, or NULL for default context
+ * @param factory_ctx Operation factory context. must not be NULL
+ * @param discard superseded crs or not
+ */
+void PROJ_DLL proj_operation_factory_context_set_discard_superseded(
+    PJ_CONTEXT *ctx, PJ_OPERATION_FACTORY_CONTEXT *factory_ctx, int discard) {
+    SANITIZE_CTX(ctx);
+    assert(factory_ctx);
+    try {
+        factory_ctx->operationContext->setDiscardSuperseded(discard != 0);
+    } catch (const std::exception &e) {
+        proj_log_error(ctx, __FUNCTION__, e.what());
+    }
+}
+
+// ---------------------------------------------------------------------------
+
 /** \brief Find a list of CoordinateOperation from source_crs to target_crs.
  *
  * The operations are sorted with the most relevant ones first: by
@@ -6474,6 +7415,11 @@ void proj_operation_factory_context_set_allowed_intermediate_crs(
  * and
  * by increasing accuracy. Operations with unknown accuracy are sorted last,
  * whatever their area.
+ *
+ * When one of the source or target CRS has a vertical component but not the
+ * other one, the one that has no vertical component is automatically promoted
+ * to a 3D version, where its vertical axis is the ellipsoidal height in metres,
+ * using the ellipsoid of the base geodetic CRS.
  *
  * @param ctx PROJ context, or NULL for default context
  * @param source_crs source CRS. Must not be NULL.
@@ -6784,14 +7730,19 @@ int proj_cs_get_axis_info(PJ_CONTEXT *ctx, const PJ *cs, int index,
 /** \brief Returns a PJ* object whose axis order is the one expected for
  * visualization purposes.
  *
- * The input object must be a coordinate operation, that has been created with
- * proj_create_crs_to_crs().
- * If the axis order of its source or target CRS is northing,easting, then an
- * axis swap operation will be inserted.
+ * The input object must be either:
+ * <ul>
+ * <li>a coordinate operation, that has been created with
+ *     proj_create_crs_to_crs(). If the axis order of its source or target CRS
+ *     is northing,easting, then an axis swap operation will be inserted.</li>
+ * <li>or a CRS. The axis order of geographic CRS will be longitude, latitude
+ *     [,height], and the one of projected CRS will be easting, northing
+ *     [, height]</li>
+ * </ul>
  *
  * @param ctx PROJ context, or NULL for default context
- * @param obj Object of type CoordinateOperation,
- * created with proj_create_crs_to_crs() (must not be NULL)
+ * @param obj Object of type CRS, or CoordinateOperation created with
+ * proj_create_crs_to_crs() (must not be NULL)
  * @return a new PJ* object to free with proj_destroy() in case of success, or
  * nullptr in case of error
  */
@@ -6839,10 +7790,20 @@ PJ *proj_normalize_for_visualization(PJ_CONTEXT *ctx, const PJ *obj) {
                         minxSrc, minySrc, maxxSrc, maxySrc, minxDst, minyDst,
                         maxxDst, maxyDst,
                         pj_obj_create(ctx, co->normalizeForVisualization()),
-                        co->nameStr());
+                        co->nameStr(), alt.accuracy, alt.isOffshore);
                 }
             }
             return pjNew.release();
+        } catch (const std::exception &e) {
+            proj_log_debug(ctx, __FUNCTION__, e.what());
+            return nullptr;
+        }
+    }
+
+    auto crs = dynamic_cast<const CRS *>(obj->iso_obj.get());
+    if (crs) {
+        try {
+            return pj_obj_create(ctx, crs->normalizeForVisualization());
         } catch (const std::exception &e) {
             proj_log_debug(ctx, __FUNCTION__, e.what());
             return nullptr;
@@ -6862,4 +7823,91 @@ PJ *proj_normalize_for_visualization(PJ_CONTEXT *ctx, const PJ *obj) {
         proj_log_debug(ctx, __FUNCTION__, e.what());
         return nullptr;
     }
+}
+
+// ---------------------------------------------------------------------------
+
+/** \brief Returns a PJ* coordinate operation object which represents the
+ * inverse operation of the specified coordinate operation.
+ *
+ * @param ctx PROJ context, or NULL for default context
+ * @param obj Object of type CoordinateOperation (must not be NULL)
+ * @return a new PJ* object to free with proj_destroy() in case of success, or
+ * nullptr in case of error
+ * @since 6.3
+ */
+PJ *proj_coordoperation_create_inverse(PJ_CONTEXT *ctx, const PJ *obj) {
+
+    SANITIZE_CTX(ctx);
+    auto co = dynamic_cast<const CoordinateOperation *>(obj->iso_obj.get());
+    if (!co) {
+        proj_log_error(ctx, __FUNCTION__,
+                       "Object is not a CoordinateOperation");
+        return nullptr;
+    }
+    try {
+        return pj_obj_create(ctx, co->inverse());
+    } catch (const std::exception &e) {
+        proj_log_debug(ctx, __FUNCTION__, e.what());
+        return nullptr;
+    }
+}
+
+// ---------------------------------------------------------------------------
+
+/** \brief Returns the number of steps of a concatenated operation.
+ *
+ * The input object must be a concatenated operation.
+ *
+ * @param ctx PROJ context, or NULL for default context
+ * @param concatoperation Concatenated operation (must not be NULL)
+ * @return the number of steps, or 0 in case of error.
+ */
+int proj_concatoperation_get_step_count(PJ_CONTEXT *ctx,
+                                        const PJ *concatoperation) {
+    SANITIZE_CTX(ctx);
+    assert(concatoperation);
+    auto l_co = dynamic_cast<const ConcatenatedOperation *>(
+        concatoperation->iso_obj.get());
+    if (!l_co) {
+        proj_log_error(ctx, __FUNCTION__,
+                       "Object is not a ConcatenatedOperation");
+        return false;
+    }
+    return static_cast<int>(l_co->operations().size());
+}
+// ---------------------------------------------------------------------------
+
+/** \brief Returns a step of a concatenated operation.
+ *
+ * The input object must be a concatenated operation.
+ *
+ * The returned object must be unreferenced with proj_destroy() after
+ * use.
+ * It should be used by at most one thread at a time.
+ *
+ * @param ctx PROJ context, or NULL for default context
+ * @param concatoperation Concatenated operation (must not be NULL)
+ * @param i_step Index of the step to extract. Between 0 and
+ *               proj_concatoperation_get_step_count()-1
+ * @return Object that must be unreferenced with proj_destroy(), or NULL
+ * in case of error.
+ */
+PJ *proj_concatoperation_get_step(PJ_CONTEXT *ctx, const PJ *concatoperation,
+                                  int i_step) {
+    SANITIZE_CTX(ctx);
+    assert(concatoperation);
+    auto l_co = dynamic_cast<const ConcatenatedOperation *>(
+        concatoperation->iso_obj.get());
+    if (!l_co) {
+        proj_log_error(ctx, __FUNCTION__,
+                       "Object is not a ConcatenatedOperation");
+        return nullptr;
+    }
+    const auto &steps = l_co->operations();
+    if (i_step < 0 || static_cast<size_t>(i_step) >= steps.size()) {
+        proj_log_error(ctx, __FUNCTION__, "Invalid step index");
+        return nullptr;
+    }
+    return pj_obj_create(ctx, steps[i_step]);
 }

@@ -1,3 +1,31 @@
+/******************************************************************************
+ *
+ * Project:  PROJ
+ * Purpose:  Test
+ * Author:   Even Rouault <even dot rouault at spatialys dot com>
+ *
+ ******************************************************************************
+ * Copyright (c) 2014, Even Rouault <even dot rouault at spatialys dot com>
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a
+ * copy of this software and associated documentation files (the "Software"),
+ * to deal in the Software without restriction, including without limitation
+ * the rights to use, copy, modify, merge, publish, distribute, sublicense,
+ * and/or sell copies of the Software, and to permit persons to whom the
+ * Software is furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included
+ * in all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+ * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+ * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+ * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+ * DEALINGS IN THE SOFTWARE.
+ ****************************************************************************/
+
 #ifndef ACCEPT_USE_OF_DEPRECATED_PROJ_API_H
 #define ACCEPT_USE_OF_DEPRECATED_PROJ_API_H
 #endif
@@ -38,7 +66,7 @@ static void* thread_main(void* unused)
     p_WGS84_proj=pj_init_plus_ctx(p_proj_ctxt,"+proj=longlat "
             "+ellps=WGS84 +datum=WGS84");
     p_OSGB36_proj=pj_init_plus_ctx(p_proj_ctxt,
-            "+proj=longlat +ellps=airy +datum=OSGB36 +nadgrids=OSTN02_NTv2.gsb");
+            "+proj=longlat +ellps=airy +datum=OSGB36 +nadgrids=OSTN15_NTv2_OSGBtoETRS.gsb");
 
     while(run)
     {
@@ -53,8 +81,8 @@ static void* thread_main(void* unused)
         y *= RAD_TO_DEG;
         /*printf("%.18f %.18f\n", x, y); */
         assert(proj_ret == 0);
-        assert(fabs(x - -5.198965360936369962) < 1e-15);
-        assert(fabs(y - 49.999396034285531698) < 1e-15);
+        assert(fabs(x - -5.198965207267856492) < 1e-15);
+        assert(fabs(y - 49.999396074140378232) < 1e-15);
     }
 
     pj_free (p_OSGB36_proj);

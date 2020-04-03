@@ -4,7 +4,7 @@ find_anyproject(GTest REQUIRED)
 # Build PROJ unit tests
 #
 
-if("${CMAKE_C_COMPILER_ID}" STREQUAL "MSVC" AND BUILD_LIBPROJ_SHARED)
+if(MSVC AND BUILD_SHARED_LIBS)
   add_definitions(-DPROJ_MSVC_DLL_IMPORT=1)
 endif()
 
@@ -56,7 +56,7 @@ target_link_libraries(proj_context_test
 add_test(NAME proj_context_test COMMAND proj_context_test)
 set_property(TEST proj_context_test PROPERTY ENVIRONMENT ${PENV})
 
-if(MSVC AND BUILD_LIBPROJ_SHARED)
+if(MSVC AND BUILD_SHARED_LIBS)
   # ph_phi2_test not compatible of a .dll build
 else()
   add_executable(pj_phi2_test

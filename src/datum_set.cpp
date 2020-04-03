@@ -41,7 +41,7 @@
 int pj_datum_set(projCtx ctx, paralist *pl, PJ *projdef)
 
 {
-    const char *name, *towgs84, *nadgrids, *catalog;
+    const char *name, *towgs84, *nadgrids;
 
     projdef->datum_type = PJD_UNKNOWN;
 
@@ -85,10 +85,22 @@ int pj_datum_set(projCtx ctx, paralist *pl, PJ *projdef)
             entry[ sizeof(entry) - 1 ] = '\0';
 
             curr = curr->next = pj_mkparam(entry);
+            if (nullptr == curr)
+            {
+                pj_ctx_set_errno(ctx, ENOMEM);
+                return 1;
+            }
         }
         
         if( pj_datums[i].defn && strlen(pj_datums[i].defn) > 0 )
+        {
             curr = curr->next = pj_mkparam(pj_datums[i].defn);
+            if (nullptr == curr)
+            {
+                pj_ctx_set_errno(ctx, ENOMEM);
+                return 1;
+            }
+        }
 
         (void)curr; /* make clang static analyzer happy */
     }
@@ -103,25 +115,6 @@ int pj_datum_set(projCtx ctx, paralist *pl, PJ *projdef)
            to exist int he param list for use in pj_apply_gridshift.c */
 
         projdef->datum_type = PJD_GRIDSHIFT;
-    }
-
-/* -------------------------------------------------------------------- */
-/*      Check for grid catalog parameter, and optional date.            */
-/* -------------------------------------------------------------------- */
-    else if( (catalog = pj_param(ctx, pl,"scatalog").s) != nullptr )
-    {
-        const char *date;
-
-        projdef->datum_type = PJD_GRIDSHIFT;
-        projdef->catalog_name = pj_strdup(catalog);
-        if (!projdef->catalog_name) {
-            pj_ctx_set_errno(ctx, ENOMEM);
-            return 1;
-        }
-
-        date = pj_param(ctx, pl, "sdate").s;
-        if( date != nullptr) 
-            projdef->datum_date = pj_gc_parsedate( ctx, date);
     }
 
 /* -------------------------------------------------------------------- */

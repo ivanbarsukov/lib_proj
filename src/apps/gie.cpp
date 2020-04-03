@@ -115,7 +115,7 @@ Thomas Knudsen, thokn@sdfe.dk, 2017-10-01/2017-10-08
 
 #include "proj.h"
 #include "proj_internal.h"
-#include "proj_math.h"
+#include <math.h>
 #include "proj_strtod.h"
 
 #include "optargpm.h"
@@ -874,7 +874,7 @@ static int expect_failure_with_errno_message (int expected, int got) {
 
 /* For test purposes, we want to call a transformation of the same */
 /* dimensionality as the number of dimensions given in accept */
-static PJ_COORD expect_trans_n_dim (PJ_COORD ci) {
+static PJ_COORD expect_trans_n_dim (const PJ_COORD& ci) {
     if (4==T.dimensions_given_at_last_accept)
         return proj_trans (T.P, T.dir, ci);
 
@@ -1153,6 +1153,7 @@ static const struct errno_vs_err_const lookup[] = {
     {"pjd_err_inconsistent_unit"        ,  -59},
     {"pjd_err_mutually_exclusive_args"  ,  -60},
     {"pjd_err_generic_error"            ,  -61},
+    {"pjd_err_network_error"            ,  -62},
     {"pjd_err_dont_skip"                ,  5555},
     {"pjd_err_unknown"                  ,  9999},
     {"pjd_err_enomem"                   ,  ENOMEM},
@@ -1192,7 +1193,7 @@ static int errno_from_err_const (const char *err_const) {
     const size_t n = sizeof lookup / sizeof lookup[0];
     size_t i, len;
     int ret;
-    char tolower_err_const[100];
+    char tolower_err_const[100] = {};
 
     /* Make a lower case copy for matching */
     for (i = 0;  i < 99; i++) {
