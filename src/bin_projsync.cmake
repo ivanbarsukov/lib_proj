@@ -9,7 +9,7 @@ set_target_properties(bin_projsync
 target_link_libraries(bin_projsync ${PROJ_LIBRARIES})
 target_compile_options(bin_projsync PRIVATE ${PROJ_CXX_WARN_FLAGS})
 install(TARGETS bin_projsync
-  RUNTIME DESTINATION ${BINDIR})
+  RUNTIME DESTINATION ${INSTALL_BIN_DIR})
 
 if(MSVC AND BUILD_SHARED_LIBS)
   target_compile_definitions(bin_projsync PRIVATE PROJ_MSVC_DLL_IMPORT=1)
