@@ -38,14 +38,14 @@
 #include <sqlite3.h>
 #include <time.h>
 
-#ifdef CURL_ENABLED
-#include <curl/curl.h>
-#endif
-
 #ifdef _WIN32
 #include <windows.h>
 #else
 #include <unistd.h>
+#endif
+
+#ifdef CURL_ENABLED
+#include <curl/curl.h>
 #endif
 
 namespace {
@@ -127,8 +127,6 @@ TEST(networking, basic) {
     ASSERT_EQ(P, nullptr);
     proj_context_destroy(ctx);
 
-    proj_cleanup();
-
 #ifdef CURL_ENABLED
     // enable through env variable
     ctx = proj_context_create();
@@ -143,8 +141,6 @@ TEST(networking, basic) {
     putenv(const_cast<char *>("PROJ_NETWORK="));
 #endif
 
-    proj_cleanup();
-
     // still disabled
     ctx = proj_context_create();
     proj_grid_cache_set_enable(ctx, false);
@@ -152,8 +148,6 @@ TEST(networking, basic) {
     P = proj_create(ctx, pipeline);
     ASSERT_EQ(P, nullptr);
     proj_context_destroy(ctx);
-
-    proj_cleanup();
 
     // enable through API
     ctx = proj_context_create();
@@ -180,7 +174,6 @@ TEST(networking, basic) {
     ASSERT_EQ(P, nullptr);
 #endif
     proj_context_destroy(ctx);
-    proj_cleanup();
 }
 
 // ---------------------------------------------------------------------------
@@ -275,9 +268,8 @@ static PROJ_NETWORK_HANDLE *open_cbk(PJ_CONTEXT *ctx, const char *url,
     auto openEvent =
         dynamic_cast<OpenEvent *>(exchange->events[exchange->nextEvent].get());
     if (!openEvent) {
-        fprintf(stderr,
-                "unexpected call to open(%s, %ld, %ld). "
-                "Was expecting a %s event\n",
+        fprintf(stderr, "unexpected call to open(%s, %ld, %ld). "
+                        "Was expecting a %s event\n",
                 url, (long)offset, (long)size_to_read,
                 exchange->events[exchange->nextEvent]->type.c_str());
         exchange->error = true;
@@ -287,9 +279,8 @@ static PROJ_NETWORK_HANDLE *open_cbk(PJ_CONTEXT *ctx, const char *url,
     if (openEvent->ctx != ctx || openEvent->url != url ||
         openEvent->offset != offset ||
         openEvent->size_to_read != size_to_read) {
-        fprintf(stderr,
-                "wrong call to open(%s, %ld, %ld). Was expecting "
-                "open(%s, %ld, %ld)\n",
+        fprintf(stderr, "wrong call to open(%s, %ld, %ld). Was expecting "
+                        "open(%s, %ld, %ld)\n",
                 url, (long)offset, (long)size_to_read, openEvent->url.c_str(),
                 (long)openEvent->offset, (long)openEvent->size_to_read);
         exchange->error = true;
@@ -321,9 +312,8 @@ static void close_cbk(PJ_CONTEXT *ctx, PROJ_NETWORK_HANDLE *handle,
     auto closeEvent =
         dynamic_cast<CloseEvent *>(exchange->events[exchange->nextEvent].get());
     if (!closeEvent) {
-        fprintf(stderr,
-                "unexpected call to close(). "
-                "Was expecting a %s event\n",
+        fprintf(stderr, "unexpected call to close(). "
+                        "Was expecting a %s event\n",
                 exchange->events[exchange->nextEvent]->type.c_str());
         exchange->error = true;
         return;
@@ -357,9 +347,8 @@ static const char *get_header_value_cbk(PJ_CONTEXT *ctx,
     auto getHeaderValueEvent = dynamic_cast<GetHeaderValueEvent *>(
         exchange->events[exchange->nextEvent].get());
     if (!getHeaderValueEvent) {
-        fprintf(stderr,
-                "unexpected call to get_header_value(). "
-                "Was expecting a %s event\n",
+        fprintf(stderr, "unexpected call to get_header_value(). "
+                        "Was expecting a %s event\n",
                 exchange->events[exchange->nextEvent]->type.c_str());
         exchange->error = true;
         return nullptr;
@@ -370,9 +359,8 @@ static const char *get_header_value_cbk(PJ_CONTEXT *ctx,
         return nullptr;
     }
     if (getHeaderValueEvent->key != header_name) {
-        fprintf(stderr,
-                "wrong call to get_header_value(%s). Was expecting "
-                "get_header_value(%s)\n",
+        fprintf(stderr, "wrong call to get_header_value(%s). Was expecting "
+                        "get_header_value(%s)\n",
                 header_name, getHeaderValueEvent->key.c_str());
         exchange->error = true;
         return nullptr;
@@ -402,9 +390,8 @@ static size_t read_range_cbk(PJ_CONTEXT *ctx, PROJ_NETWORK_HANDLE *handle,
     auto readRangeEvent = dynamic_cast<ReadRangeEvent *>(
         exchange->events[exchange->nextEvent].get());
     if (!readRangeEvent) {
-        fprintf(stderr,
-                "unexpected call to read_range(). "
-                "Was expecting a %s event\n",
+        fprintf(stderr, "unexpected call to read_range(). "
+                        "Was expecting a %s event\n",
                 exchange->events[exchange->nextEvent]->type.c_str());
         exchange->error = true;
         return 0;
@@ -416,9 +403,8 @@ static size_t read_range_cbk(PJ_CONTEXT *ctx, PROJ_NETWORK_HANDLE *handle,
     }
     if (readRangeEvent->ctx != ctx || readRangeEvent->offset != offset ||
         readRangeEvent->size_to_read != size_to_read) {
-        fprintf(stderr,
-                "wrong call to read_range(%ld, %ld). Was expecting "
-                "read_range(%ld, %ld)\n",
+        fprintf(stderr, "wrong call to read_range(%ld, %ld). Was expecting "
+                        "read_range(%ld, %ld)\n",
                 (long)offset, (long)size_to_read, (long)readRangeEvent->offset,
                 (long)readRangeEvent->size_to_read);
         exchange->error = true;
@@ -1315,10 +1301,9 @@ TEST(networking, cache_basic) {
                     SQLITE_OPEN_READONLY, nullptr);
     ASSERT_NE(hDB, nullptr);
     sqlite3_stmt *hStmt = nullptr;
-    sqlite3_prepare_v2(hDB,
-                       "SELECT url, offset FROM chunks WHERE id = ("
-                       "SELECT chunk_id FROM linked_chunks WHERE id = ("
-                       "SELECT head FROM linked_chunks_head_tail))",
+    sqlite3_prepare_v2(hDB, "SELECT url, offset FROM chunks WHERE id = ("
+                            "SELECT chunk_id FROM linked_chunks WHERE id = ("
+                            "SELECT head FROM linked_chunks_head_tail))",
                        -1, &hStmt, nullptr);
     ASSERT_NE(hStmt, nullptr);
     ASSERT_EQ(sqlite3_step(hStmt), SQLITE_ROW);
@@ -1437,10 +1422,9 @@ TEST(networking, cache_saturation) {
     ASSERT_NE(hDB, nullptr);
 
     sqlite3_stmt *hStmt = nullptr;
-    sqlite3_prepare_v2(hDB,
-                       "SELECT COUNT(*) FROM chunk_data UNION ALL "
-                       "SELECT COUNT(*) FROM chunks UNION ALL "
-                       "SELECT COUNT(*) FROM linked_chunks",
+    sqlite3_prepare_v2(hDB, "SELECT COUNT(*) FROM chunk_data UNION ALL "
+                            "SELECT COUNT(*) FROM chunks UNION ALL "
+                            "SELECT COUNT(*) FROM linked_chunks",
                        -1, &hStmt, nullptr);
     ASSERT_NE(hStmt, nullptr);
     ASSERT_EQ(sqlite3_step(hStmt), SQLITE_ROW);
@@ -1496,9 +1480,8 @@ TEST(networking, cache_ttl) {
 
     // Force lastChecked to the Epoch so that data is expired.
     sqlite3_stmt *hStmt = nullptr;
-    sqlite3_prepare_v2(hDB,
-                       "UPDATE properties SET lastChecked = 0, "
-                       "lastModified = 'foo', etag = 'bar'",
+    sqlite3_prepare_v2(hDB, "UPDATE properties SET lastChecked = 0, "
+                            "lastModified = 'foo', etag = 'bar'",
                        -1, &hStmt, nullptr);
     ASSERT_NE(hStmt, nullptr);
     ASSERT_EQ(sqlite3_step(hStmt), SQLITE_DONE);
@@ -1734,9 +1717,8 @@ TEST(networking, download_whole_files) {
 
         // Now invalid lastModified. This should trigger a new download
         sqlite3_prepare_v2(
-            hDB,
-            "UPDATE downloaded_file_properties SET lastChecked = 0, "
-            "lastModified = 'foo'",
+            hDB, "UPDATE downloaded_file_properties SET lastChecked = 0, "
+                 "lastModified = 'foo'",
             -1, &hStmt, nullptr);
         ASSERT_NE(hStmt, nullptr);
         ASSERT_EQ(sqlite3_step(hStmt), SQLITE_DONE);

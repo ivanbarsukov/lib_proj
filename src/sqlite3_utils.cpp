@@ -103,7 +103,7 @@ static int VFSCustomOpen(sqlite3_vfs *vfs, const char *name, sqlite3_file *file,
         if (realVFS->fakeSync) {
             // Disable xSync because it can be significantly slow and we don't
             // need
-            // that level of data integrity guarantee for the cache.
+            // that level of data integrity garanty for the cache.
             methods->xSync = VSFNoOpLockUnlockSync;
         }
         if (realVFS->fakeLock) {
@@ -133,28 +133,8 @@ static int VFSCustomAccess(sqlite3_vfs *vfs, const char *zName, int flags,
 
 // ---------------------------------------------------------------------------
 
-// SQLite3 logging infrastructure
-static void projSqlite3LogCallback(void *, int iErrCode, const char *zMsg) {
-    fprintf(stderr, "SQLite3 message: (code %d) %s\n", iErrCode, zMsg);
-}
-
 std::unique_ptr<SQLite3VFS> SQLite3VFS::create(bool fakeSync, bool fakeLock,
                                                bool skipStatJournalAndWAL) {
-
-    // Install SQLite3 logger if PROJ_LOG_SQLITE3 env var is defined
-    struct InstallSqliteLogger {
-        InstallSqliteLogger() {
-            if (getenv("PROJ_LOG_SQLITE3") != nullptr) {
-                sqlite3_config(SQLITE_CONFIG_LOG, projSqlite3LogCallback,
-                               nullptr);
-            }
-        }
-    };
-    static InstallSqliteLogger installSqliteLogger;
-
-    // Call to sqlite3_initialize() is normally not needed, except for
-    // people building SQLite3 with -DSQLITE_OMIT_AUTOINIT
-    sqlite3_initialize();
     sqlite3_vfs *defaultVFS = sqlite3_vfs_find(nullptr);
     assert(defaultVFS);
 

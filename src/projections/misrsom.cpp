@@ -53,8 +53,7 @@ static void seraz0(double lam, double mult, PJ *P) {
     h = sqrt((1. + Q->q * sdsq) / (1. + Q->w * sdsq)) * ((1. +
         Q->w * sdsq) / (d__1 * d__1) - Q->p22 * Q->ca);
     sq = sqrt(Q->xj * Q->xj + s * s);
-    fc = mult * (h * Q->xj - s * s) / sq;
-    Q->b += fc;
+    Q->b += fc = mult * (h * Q->xj - s * s) / sq;
     Q->a2 += fc * cos(lam + lam);
     Q->a4 += fc * cos(lam * 4.);
     fc = mult * s * (h + Q->xj) / sq;
@@ -90,8 +89,7 @@ static PJ_XY misrsom_e_forward (PJ_LP lp, PJ *P) {          /* Ellipsoidal, forw
                 fac = lampp - sin(lampp) * M_HALFPI;
             for (l = 50; l; --l) {
                     lamt = lp.lam + Q->p22 * sav;
-                    c = cos(lamt);
-                    if (fabs(c) < TOL)
+                    if (fabs(c = cos(lamt)) < TOL)
                         lamt -= TOL;
                     xlam = (P->one_es * tanphi * Q->sa + sin(lamt) * Q->ca) / c;
                     lamdp = atan(xlam) + fac;
@@ -155,7 +153,7 @@ static PJ_LP misrsom_e_inverse (PJ_XY xy, PJ *P) {          /* Ellipsoidal, inve
     sppsq = spp * spp;
     const double denom = 1. - sppsq * (1. + Q->u);
     if( denom == 0.0 ) {
-        proj_errno_set(P, PROJ_ERR_COORD_TRANSFM_OUTSIDE_PROJECTION_DOMAIN);
+        proj_errno_set(P, PJD_ERR_NON_CONVERGENT);
         return proj_coord_error().lp;
     }
     lamt = atan(((1. - sppsq * P->rone_es) * tan(lamdp) *
@@ -178,17 +176,14 @@ PJ *PROJECTION(misrsom) {
     int path;
     double lam, alf, esc, ess;
 
-    struct pj_opaque *Q = static_cast<struct pj_opaque*>(calloc (1, sizeof (struct pj_opaque)));
+    struct pj_opaque *Q = static_cast<struct pj_opaque*>(pj_calloc (1, sizeof (struct pj_opaque)));
     if (nullptr==Q)
-        return pj_default_destructor (P, PROJ_ERR_OTHER /*ENOMEM*/);
+        return pj_default_destructor (P, ENOMEM);
     P->opaque = Q;
 
     path = pj_param(P->ctx, P->params, "ipath").i;
     if (path <= 0 || path > 233)
-    {
-        proj_log_error(P, _("Invalid value for path: path should be in [1, 233] range"));
-        return pj_default_destructor(P, PROJ_ERR_INVALID_OP_ILLEGAL_ARG_VALUE);
-    }
+        return pj_default_destructor(P, PJD_ERR_PATH_NOT_IN_RANGE);
 
     P->lam0 = DEG_TO_RAD * 129.3056 - M_TWOPI / 233. * path;
     alf = 98.30382 * DEG_TO_RAD;

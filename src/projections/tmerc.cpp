@@ -18,36 +18,26 @@
 #include "proj.h"
 #include "proj_internal.h"
 #include <math.h>
-#include "mlfn.hpp"
+
 
 PROJ_HEAD(tmerc, "Transverse Mercator") "\n\tCyl, Sph&Ell\n\tapprox";
 PROJ_HEAD(etmerc, "Extended Transverse Mercator") "\n\tCyl, Sph";
-PROJ_HEAD(utm, "Universal Transverse Mercator (UTM)") "\n\tCyl, Ell\n\tzone= south approx";
+PROJ_HEAD(utm, "Universal Transverse Mercator (UTM)") "\n\tCyl, Sph\n\tzone= south approx";
 
 namespace { // anonymous namespace
-
-// Approximate: Evenden/Snyder
-struct EvendenSnyder
-{
+struct pj_opaque_approx {
     double  esp;
     double  ml0;
     double  *en;
 };
 
-// More exact: Poder/Engsager
-struct PoderEngsager
-{
+struct pj_opaque_exact {
     double    Qn;     /* Merid. quad., scaled to the projection */
     double    Zb;     /* Radius vector in polar coord. systems  */
     double    cgb[6]; /* Constants for Gauss -> Geo lat */
     double    cbg[6]; /* Constants for Geo lat -> Gauss */
     double    utg[6]; /* Constants for transv. merc. -> geo */
     double    gtu[6]; /* Constants for geo -> transv. merc. */
-};
-
-struct tmerc_data {
-    EvendenSnyder approx;
-    PoderEngsager exact;
 };
 
 } // anonymous namespace
@@ -72,11 +62,9 @@ struct tmerc_data {
 //
 /*****************************************************************************/
 
-
-static PJ_XY approx_e_fwd (PJ_LP lp, PJ *P)
-{
+static PJ_XY approx_e_fwd (PJ_LP lp, PJ *P) {
     PJ_XY xy = {0.0, 0.0};
-    const auto *Q = &(static_cast<struct tmerc_data*>(P->opaque)->approx);
+    struct pj_opaque_approx *Q = static_cast<struct pj_opaque_approx*>(P->opaque);
     double al, als, n, cosphi, sinphi, t;
 
     /*
@@ -89,7 +77,7 @@ static PJ_XY approx_e_fwd (PJ_LP lp, PJ *P)
     if( lp.lam < -M_HALFPI || lp.lam > M_HALFPI ) {
         xy.x = HUGE_VAL;
         xy.y = HUGE_VAL;
-        proj_context_errno_set( P->ctx, PROJ_ERR_COORD_TRANSFM_OUTSIDE_PROJECTION_DOMAIN );
+        pj_ctx_set_errno( P->ctx, PJD_ERR_LAT_OR_LON_EXCEED_LIMIT );
         return xy;
     }
 
@@ -106,7 +94,7 @@ static PJ_XY approx_e_fwd (PJ_LP lp, PJ *P)
         FC5 * als * (5. + t * (t - 18.) + n * (14. - 58. * t)
         + FC7 * als * (61. + t * ( t * (179. - t) - 479. ) )
         )));
-    xy.y = P->k0 * (inline_pj_mlfn(lp.phi, sinphi, cosphi, Q->en) - Q->ml0 +
+    xy.y = P->k0 * (pj_mlfn(lp.phi, sinphi, cosphi, Q->en) - Q->ml0 +
         sinphi * al * lp.lam * FC2 * ( 1. +
         FC4 * als * (5. - t + n * (9. + 4. * n) +
         FC6 * als * (61. + t * (t - 58.) + n * (270. - 330 * t)
@@ -115,30 +103,39 @@ static PJ_XY approx_e_fwd (PJ_LP lp, PJ *P)
     return (xy);
 }
 
-static PJ_XY tmerc_spherical_fwd (PJ_LP lp, PJ *P) {
+
+static PJ_XY approx_s_fwd (PJ_LP lp, PJ *P) {
     PJ_XY xy = {0.0,0.0};
     double b, cosphi;
-    const auto *Q = &(static_cast<struct tmerc_data*>(P->opaque)->approx);
+
+    /*
+     * Fail if our longitude is more than 90 degrees from the
+     * central meridian since the results are essentially garbage.
+     * Is error -20 really an appropriate return value?
+     *
+     *  http://trac.osgeo.org/proj/ticket/5
+     */
+    if( lp.lam < -M_HALFPI || lp.lam > M_HALFPI ) {
+        xy.x = HUGE_VAL;
+        xy.y = HUGE_VAL;
+        pj_ctx_set_errno( P->ctx, PJD_ERR_LAT_OR_LON_EXCEED_LIMIT );
+        return xy;
+    }
 
     cosphi = cos(lp.phi);
     b = cosphi * sin (lp.lam);
     if (fabs (fabs (b) - 1.) <= EPS10) {
-        proj_errno_set(P, PROJ_ERR_COORD_TRANSFM_OUTSIDE_PROJECTION_DOMAIN);
+        proj_errno_set(P, PJD_ERR_TOLERANCE_CONDITION);
         return xy;
     }
 
-    xy.x = Q->ml0 * log ((1. + b) / (1. - b));
+    xy.x = static_cast<struct pj_opaque_approx*>(P->opaque)->ml0 * log ((1. + b) / (1. - b));
     xy.y = cosphi * cos (lp.lam) / sqrt (1. - b * b);
 
     b = fabs ( xy.y );
-    if (cosphi == 1 && (lp.lam < -M_HALFPI || lp.lam > M_HALFPI) ) {
-        /* Helps to be able to roundtrip |longitudes| > 90 at lat=0 */
-        /* We could also map to -M_PI ... */
-        xy.y = M_PI;
-    }
-    else if (b >= 1.) {
+    if (b >= 1.) {
         if ((b - 1.) > EPS10) {
-            proj_errno_set(P, PROJ_ERR_COORD_TRANSFM_OUTSIDE_PROJECTION_DOMAIN);
+            proj_errno_set(P, PJD_ERR_TOLERANCE_CONDITION);
             return xy;
         }
         else xy.y = 0.;
@@ -147,27 +144,29 @@ static PJ_XY tmerc_spherical_fwd (PJ_LP lp, PJ *P) {
 
     if (lp.phi < 0.)
         xy.y = -xy.y;
-    xy.y = Q->esp * (xy.y - P->phi0);
+    xy.y = static_cast<struct pj_opaque_approx*>(P->opaque)->esp * (xy.y - P->phi0);
     return xy;
 }
 
+
 static PJ_LP approx_e_inv (PJ_XY xy, PJ *P) {
     PJ_LP lp = {0.0,0.0};
-    const auto *Q = &(static_cast<struct tmerc_data*>(P->opaque)->approx);
+    struct pj_opaque_approx *Q = static_cast<struct pj_opaque_approx*>(P->opaque);
+    double n, con, cosphi, d, ds, sinphi, t;
 
-    double sinphi, cosphi;
-    lp.phi = inline_pj_inv_mlfn(P->ctx, Q->ml0 + xy.y / P->k0, P->es, Q->en, &sinphi, &cosphi);
+    lp.phi = pj_inv_mlfn(P->ctx, Q->ml0 + xy.y / P->k0, P->es, Q->en);
     if (fabs(lp.phi) >= M_HALFPI) {
         lp.phi = xy.y < 0. ? -M_HALFPI : M_HALFPI;
         lp.lam = 0.;
     } else {
-        double t = fabs (cosphi) > 1e-10 ? sinphi/cosphi : 0.;
-        const double n = Q->esp * cosphi * cosphi;
-        double con = 1. - P->es * sinphi * sinphi;
-        const double d = xy.x * sqrt (con) / P->k0;
+        sinphi = sin(lp.phi);
+        cosphi = cos(lp.phi);
+        t = fabs (cosphi) > 1e-10 ? sinphi/cosphi : 0.;
+        n = Q->esp * cosphi * cosphi;
+        d = xy.x * sqrt (con = 1. - P->es * sinphi * sinphi) / P->k0;
         con *= t;
         t *= t;
-        const double ds = d * d;
+        ds = d * d;
         lp.phi -= (con * ds / (1.-P->es)) * FC2 * (1. -
             ds * FC4 * (5. + t * (3. - 9. *  n) + n * (1. - 4 * n) -
             ds * FC6 * (61. + t * (90. - 252. * n +
@@ -183,54 +182,58 @@ static PJ_LP approx_e_inv (PJ_XY xy, PJ *P) {
     return lp;
 }
 
-static PJ_LP tmerc_spherical_inv (PJ_XY xy, PJ *P) {
+
+static PJ_LP approx_s_inv (PJ_XY xy, PJ *P) {
     PJ_LP lp = {0.0, 0.0};
     double h, g;
-    const auto *Q = &(static_cast<struct tmerc_data*>(P->opaque)->approx);
 
-    h = exp(xy.x / Q->esp);
+    h = exp(xy.x / static_cast<struct pj_opaque_approx*>(P->opaque)->esp);
     if( h == 0 ) {
-        proj_errno_set(P, PROJ_ERR_COORD_TRANSFM_OUTSIDE_PROJECTION_DOMAIN);
+        proj_errno_set(P, PJD_ERR_INVALID_X_OR_Y);
         return proj_coord_error().lp;
     }
     g = .5 * (h - 1. / h);
-    /* D, as in equation 8-8 of USGS "Map Projections - A Working Manual" */
-    const double D = P->phi0 + xy.y / Q->esp;
-    h = cos (D);
+    h = cos (P->phi0 + xy.y / static_cast<struct pj_opaque_approx*>(P->opaque)->esp);
     lp.phi = asin(sqrt((1. - h * h) / (1. + g * g)));
 
     /* Make sure that phi is on the correct hemisphere when false northing is used */
-    lp.phi = copysign(lp.phi, D);
+    if (xy.y < 0. && -lp.phi+P->phi0 < 0.0) lp.phi = -lp.phi;
 
     lp.lam = (g != 0.0 || h != 0.0) ? atan2 (g, h) : 0.;
     return lp;
 }
 
 
-static PJ *destructor(PJ *P, int errlev) {
+static PJ *destructor_approx(PJ *P, int errlev) {
     if (nullptr==P)
         return nullptr;
 
     if (nullptr==P->opaque)
         return pj_default_destructor(P, errlev);
 
-    free (static_cast<struct tmerc_data*>(P->opaque)->approx.en);
+    pj_dealloc (static_cast<struct pj_opaque_approx*>(P->opaque)->en);
     return pj_default_destructor(P, errlev);
 }
 
 
 static PJ *setup_approx(PJ *P) {
-    auto *Q = &(static_cast<struct tmerc_data*>(P->opaque)->approx);
+    struct pj_opaque_approx *Q = static_cast<struct pj_opaque_approx*>(P->opaque);
+
+    P->destructor = destructor_approx;
 
     if (P->es != 0.0) {
         if (!(Q->en = pj_enfn(P->es)))
-            return pj_default_destructor(P, PROJ_ERR_OTHER /*ENOMEM*/);
+            return pj_default_destructor(P, ENOMEM);
 
         Q->ml0 = pj_mlfn(P->phi0, sin(P->phi0), cos(P->phi0), Q->en);
         Q->esp = P->es / (1. - P->es);
+        P->inv = approx_e_inv;
+        P->fwd = approx_e_fwd;
     } else {
         Q->esp = P->k0;
         Q->ml0 = .5 * Q->esp;
+        P->inv = approx_s_inv;
+        P->fwd = approx_s_fwd;
     }
     return P;
 }
@@ -255,32 +258,43 @@ static PJ *setup_approx(PJ *P) {
 //
 /*****************************************************************************/
 
-/* Helper functions for "exact" transverse mercator */
-inline
-static double gatg(const double *p1, int len_p1, double B, double cos_2B, double sin_2B) {
-    double h = 0, h1, h2 = 0;
+/* Helper functios for "exact" transverse mercator */
+#ifdef _GNU_SOURCE
+    inline
+#endif
+static double gatg(double *p1, int len_p1, double B) {
+    double *p;
+    double h = 0, h1, h2 = 0, cos_2B;
 
-    const double two_cos_2B = 2*cos_2B;
-    const double* p = p1 + len_p1;
+    cos_2B = 2*cos(2*B);
+    p = p1 + len_p1;
     h1 = *--p;
     while (p - p1) {
-        h = -h2 + two_cos_2B*h1 + *--p;
+        h = -h2 + cos_2B*h1 + *--p;
         h2 = h1;
         h1 = h;
     }
-    return (B + h*sin_2B);
+    return (B + h*sin(2*B));
 }
 
 /* Complex Clenshaw summation */
-inline
-static double clenS(const double *a, int size,
-                    double sin_arg_r, double cos_arg_r,
-                    double sinh_arg_i, double cosh_arg_i,
-                    double *R, double *I) {
-    double      r, i, hr, hr1, hr2, hi, hi1, hi2;
+#ifdef _GNU_SOURCE
+    inline
+#endif
+static double clenS(double *a, int size, double arg_r, double arg_i, double *R, double *I) {
+    double      *p, r, i, hr, hr1, hr2, hi, hi1, hi2;
+    double      sin_arg_r, cos_arg_r, sinh_arg_i, cosh_arg_i;
 
     /* arguments */
-    const double* p = a + size;
+    p = a + size;
+#ifdef _GNU_SOURCE
+    sincos(arg_r, &sin_arg_r, &cos_arg_r);
+#else
+    sin_arg_r  = sin(arg_r);
+    cos_arg_r  = cos(arg_r);
+#endif
+    sinh_arg_i = sinh(arg_i);
+    cosh_arg_i = cosh(arg_i);
     r          =  2*cos_arg_r*cosh_arg_i;
     i          = -2*sin_arg_r*sinh_arg_i;
 
@@ -305,10 +319,10 @@ static double clenS(const double *a, int size,
 
 
 /* Real Clenshaw summation */
-static double clens(const double *a, int size, double arg_r) {
-    double      r, hr, hr1, hr2, cos_arg_r;
+static double clens(double *a, int size, double arg_r) {
+    double      *p, r, hr, hr1, hr2, cos_arg_r;
 
-    const double* p = a + size;
+    p = a + size;
     cos_arg_r  = cos(arg_r);
     r          =  2*cos_arg_r;
 
@@ -326,86 +340,35 @@ static double clens(const double *a, int size, double arg_r) {
 /* Ellipsoidal, forward */
 static PJ_XY exact_e_fwd (PJ_LP lp, PJ *P) {
     PJ_XY xy = {0.0,0.0};
-    const auto *Q = &(static_cast<struct tmerc_data*>(P->opaque)->exact);
+    struct pj_opaque_exact *Q = static_cast<struct pj_opaque_exact*>(P->opaque);
+    double sin_Cn, cos_Cn, cos_Ce, sin_Ce, dCn, dCe;
+    double Cn = lp.phi, Ce = lp.lam;
 
     /* ell. LAT, LNG -> Gaussian LAT, LNG */
-    double Cn  = gatg (Q->cbg, PROJ_ETMERC_ORDER, lp.phi, cos(2*lp.phi), sin(2*lp.phi));
+    Cn  = gatg (Q->cbg, PROJ_ETMERC_ORDER, Cn);
     /* Gaussian LAT, LNG -> compl. sph. LAT */
-    const double sin_Cn = sin (Cn);
-    const double cos_Cn = cos (Cn);
-    const double sin_Ce = sin (lp.lam);
-    const double cos_Ce = cos (lp.lam);
-
-    const double cos_Cn_cos_Ce = cos_Cn*cos_Ce;
-    Cn     = atan2 (sin_Cn, cos_Cn_cos_Ce);
-
-    const double inv_denom_tan_Ce = 1. / hypot (sin_Cn, cos_Cn_cos_Ce);
-    const double tan_Ce = sin_Ce*cos_Cn * inv_denom_tan_Ce;
-#if 0
-    // Variant of the above: found not to be measurably faster
-    const double sin_Ce_cos_Cn = sin_Ce*cos_Cn;
-    const double denom = sqrt(1 - sin_Ce_cos_Cn * sin_Ce_cos_Cn);
-    const double tan_Ce = sin_Ce_cos_Cn / denom;
+#ifdef _GNU_SOURCE
+    sincos (Cn, &sin_Cn, &cos_Cn);
+    sincos (Ce, &sin_Ce, &cos_Ce);
+#else
+    sin_Cn = sin (Cn);
+    cos_Cn = cos (Cn);
+    sin_Ce = sin (Ce);
+    cos_Ce = cos (Ce);
 #endif
 
+    Cn     = atan2 (sin_Cn, cos_Ce*cos_Cn);
+    Ce     = atan2 (sin_Ce*cos_Cn,  hypot (sin_Cn, cos_Cn*cos_Ce));
+
     /* compl. sph. N, E -> ell. norm. N, E */
-    double Ce  = asinh ( tan_Ce );     /* Replaces: Ce  = log(tan(FORTPI + Ce*0.5)); */
-
-/*
- *  Non-optimized version:
- *  const double sin_arg_r  = sin(2*Cn);
- *  const double cos_arg_r  = cos(2*Cn);
- *
- *  Given:
- *      sin(2 * Cn) = 2 sin(Cn) cos(Cn)
- *          sin(atan(y)) = y / sqrt(1 + y^2)
- *          cos(atan(y)) = 1 / sqrt(1 + y^2)
- *      ==> sin(2 * Cn) = 2 tan_Cn / (1 + tan_Cn^2)
- *
- *      cos(2 * Cn) = 2cos^2(Cn) - 1
- *                  = 2 / (1 + tan_Cn^2) - 1
- */
-    const double two_inv_denom_tan_Ce = 2 * inv_denom_tan_Ce;
-    const double two_inv_denom_tan_Ce_square = two_inv_denom_tan_Ce * inv_denom_tan_Ce;
-    const double tmp_r = cos_Cn_cos_Ce * two_inv_denom_tan_Ce_square;
-    const double sin_arg_r  = sin_Cn * tmp_r;
-    const double cos_arg_r  = cos_Cn_cos_Ce * tmp_r - 1;
-
-/*
- *  Non-optimized version:
- *  const double sinh_arg_i = sinh(2*Ce);
- *  const double cosh_arg_i = cosh(2*Ce);
- *
- *  Given
- *      sinh(2 * Ce) = 2 sinh(Ce) cosh(Ce)
- *          sinh(asinh(y)) = y
- *          cosh(asinh(y)) = sqrt(1 + y^2)
- *      ==> sinh(2 * Ce) = 2 tan_Ce sqrt(1 + tan_Ce^2)
- *
- *      cosh(2 * Ce) = 2cosh^2(Ce) - 1
- *                   = 2 * (1 + tan_Ce^2) - 1
- *
- * and 1+tan_Ce^2 = 1 + sin_Ce^2 * cos_Cn^2 / (sin_Cn^2 + cos_Cn^2 * cos_Ce^2)
- *                = (sin_Cn^2 + cos_Cn^2 * cos_Ce^2 + sin_Ce^2 * cos_Cn^2) / (sin_Cn^2 + cos_Cn^2 * cos_Ce^2)
- *                = 1. / (sin_Cn^2 + cos_Cn^2 * cos_Ce^2)
- *                = inv_denom_tan_Ce^2
- *
- */
-    const double sinh_arg_i = tan_Ce * two_inv_denom_tan_Ce;
-    const double cosh_arg_i = two_inv_denom_tan_Ce_square - 1;
-
-    double dCn, dCe;
-    Cn += clenS (Q->gtu, PROJ_ETMERC_ORDER,
-                 sin_arg_r, cos_arg_r, sinh_arg_i, cosh_arg_i,
-                 &dCn, &dCe);
+    Ce  = asinh ( tan (Ce) );     /* Replaces: Ce  = log(tan(FORTPI + Ce*0.5)); */
+    Cn += clenS (Q->gtu, PROJ_ETMERC_ORDER, 2*Cn, 2*Ce, &dCn, &dCe);
     Ce += dCe;
     if (fabs (Ce) <= 2.623395162778) {
         xy.y  = Q->Qn * Cn + Q->Zb;  /* Northing */
         xy.x  = Q->Qn * Ce;          /* Easting  */
-    } else {
-        proj_errno_set(P, PROJ_ERR_COORD_TRANSFM_OUTSIDE_PROJECTION_DOMAIN);
+    } else
         xy.x = xy.y = HUGE_VAL;
-    }
     return xy;
 }
 
@@ -413,86 +376,53 @@ static PJ_XY exact_e_fwd (PJ_LP lp, PJ *P) {
 /* Ellipsoidal, inverse */
 static PJ_LP exact_e_inv (PJ_XY xy, PJ *P) {
     PJ_LP lp = {0.0,0.0};
-    const auto *Q = &(static_cast<struct tmerc_data*>(P->opaque)->exact);
+    struct pj_opaque_exact *Q = static_cast<struct pj_opaque_exact*>(P->opaque);
+    double sin_Cn, cos_Cn, cos_Ce, sin_Ce, dCn, dCe;
+    double Cn = xy.y, Ce = xy.x;
 
     /* normalize N, E */
-    double Cn = (xy.y - Q->Zb)/Q->Qn;
-    double Ce = xy.x/Q->Qn;
+    Cn = (Cn - Q->Zb)/Q->Qn;
+    Ce = Ce/Q->Qn;
 
     if (fabs(Ce) <= 2.623395162778) { /* 150 degrees */
         /* norm. N, E -> compl. sph. LAT, LNG */
-        const double sin_arg_r  = sin(2*Cn);
-        const double cos_arg_r  = cos(2*Cn);
-
-        //const double sinh_arg_i = sinh(2*Ce);
-        //const double cosh_arg_i = cosh(2*Ce);
-        const double exp_2_Ce = exp(2*Ce);
-        const double half_inv_exp_2_Ce = 0.5 / exp_2_Ce;
-        const double sinh_arg_i = 0.5 * exp_2_Ce - half_inv_exp_2_Ce;
-        const double cosh_arg_i = 0.5 * exp_2_Ce + half_inv_exp_2_Ce;
-
-        double dCn_ignored, dCe;
-        Cn += clenS(Q->utg, PROJ_ETMERC_ORDER,
-                    sin_arg_r, cos_arg_r, sinh_arg_i, cosh_arg_i,
-                    &dCn_ignored, &dCe);
+        Cn += clenS(Q->utg, PROJ_ETMERC_ORDER, 2*Cn, 2*Ce, &dCn, &dCe);
         Ce += dCe;
-
+        Ce = atan (sinh (Ce)); /* Replaces: Ce = 2*(atan(exp(Ce)) - FORTPI); */
         /* compl. sph. LAT -> Gaussian LAT, LNG */
-        const double sin_Cn = sin (Cn);
-        const double cos_Cn = cos (Cn);
-
-#if 0
-        // Non-optimized version:
-        double sin_Ce, cos_Ce;
-        Ce = atan (sinh (Ce));  // Replaces: Ce = 2*(atan(exp(Ce)) - FORTPI);
+#ifdef _GNU_SOURCE
+        sincos (Cn, &sin_Cn, &cos_Cn);
+        sincos (Ce, &sin_Ce, &cos_Ce);
+#else
+        sin_Cn = sin (Cn);
+        cos_Cn = cos (Cn);
         sin_Ce = sin (Ce);
         cos_Ce = cos (Ce);
+#endif
         Ce     = atan2 (sin_Ce, cos_Ce*cos_Cn);
         Cn     = atan2 (sin_Cn*cos_Ce,  hypot (sin_Ce, cos_Ce*cos_Cn));
-#else
-/*
- *      One can divide both member of Ce = atan2(...) by cos_Ce, which gives:
- *      Ce     = atan2 (tan_Ce, cos_Cn) = atan2(sinh(Ce), cos_Cn)
- *
- *      and the same for Cn = atan2(...)
- *      Cn     = atan2 (sin_Cn, hypot (sin_Ce, cos_Ce*cos_Cn)/cos_Ce)
- *             = atan2 (sin_Cn, hypot (sin_Ce/cos_Ce, cos_Cn))
- *             = atan2 (sin_Cn, hypot (tan_Ce, cos_Cn))
- *             = atan2 (sin_Cn, hypot (sinhCe, cos_Cn))
- */
-        const double sinhCe = sinh (Ce);
-        Ce     = atan2 (sinhCe, cos_Cn);
-        const double modulus_Ce = hypot (sinhCe, cos_Cn);
-        Cn     = atan2 (sin_Cn, modulus_Ce);
-#endif
-
         /* Gaussian LAT, LNG -> ell. LAT, LNG */
-
-        // Optimization of the computation of cos(2*Cn) and sin(2*Cn)
-        const double tmp = 2 * modulus_Ce / (sinhCe * sinhCe + 1);
-        const double sin_2_Cn  = sin_Cn * tmp;
-        const double cos_2_Cn  = tmp * modulus_Ce - 1.;
-        //const double cos_2_Cn = cos(2 * Cn);
-        //const double sin_2_Cn = sin(2 * Cn);
-
-        lp.phi = gatg (Q->cgb,  PROJ_ETMERC_ORDER, Cn, cos_2_Cn, sin_2_Cn);
+        lp.phi = gatg (Q->cgb,  PROJ_ETMERC_ORDER, Cn);
         lp.lam = Ce;
     }
-    else {
-        proj_errno_set(P, PROJ_ERR_COORD_TRANSFM_OUTSIDE_PROJECTION_DOMAIN);
+    else
         lp.phi = lp.lam = HUGE_VAL;
-    }
     return lp;
 }
 
 static PJ *setup_exact(PJ *P) {
-    auto *Q = &(static_cast<struct tmerc_data*>(P->opaque)->exact);
+    double f, n, np, Z;
+    struct pj_opaque_exact *Q = static_cast<struct pj_opaque_exact*>(P->opaque);
 
-    assert( P->es > 0 );
+    if (P->es <= 0) {
+        return pj_default_destructor(P, PJD_ERR_ELLIPSOID_USE_REQUIRED);
+    }
+
+    /* flattening */
+    f = P->es / (1 + sqrt (1 -  P->es)); /* Replaces: f = 1 - sqrt(1-P->es); */
 
     /* third flattening */
-    const double n = P->n;
-    double np = n;
+    np = n = f/(2 - f);
 
     /* COEF. OF TRIG SERIES GEO <-> GAUSS */
     /* cgb := Gaussian -> Geodetic, KW p190 - 191 (61) - (62) */
@@ -557,140 +487,17 @@ static PJ *setup_exact(PJ *P) {
     Q->gtu[5] = np*(212378941/319334400.0);
 
     /* Gaussian latitude value of the origin latitude */
-    const double Z = gatg (Q->cbg, PROJ_ETMERC_ORDER, P->phi0, cos(2*P->phi0), sin(2*P->phi0));
+    Z = gatg (Q->cbg, PROJ_ETMERC_ORDER, P->phi0);
 
     /* Origin northing minus true northing at the origin latitude */
     /* i.e. true northing = N - P->Zb                         */
     Q->Zb  = - Q->Qn*(Z + clens(Q->gtu, PROJ_ETMERC_ORDER, 2*Z));
-
+    P->inv = exact_e_inv;
+    P->fwd = exact_e_fwd;
     return P;
 }
 
 
-
-static PJ_XY auto_e_fwd (PJ_LP lp, PJ *P) {
-    if( fabs(lp.lam) > 3 * DEG_TO_RAD )
-        return exact_e_fwd(lp, P);
-    else
-        return approx_e_fwd(lp, P);
-}
-
-static PJ_LP auto_e_inv (PJ_XY xy, PJ *P) {
-    // For k = 1 and lon = 3 (from central meridian),
-    // At lat = 0, we get x ~= 0.052, y = 0
-    // At lat = 90, we get x = 0, y ~= 1.57
-    // And the shape of this x=f(y) frontier curve is very very roughly a
-    // parabola. Hence:
-    if( fabs(xy.x) > 0.053 - 0.022 * xy.y * xy.y )
-        return exact_e_inv(xy, P);
-    else
-        return approx_e_inv(xy, P);
-}
-
-static PJ *setup(PJ *P, TMercAlgo eAlg) {
-
-    struct tmerc_data *Q = static_cast<struct tmerc_data*>(calloc (1, sizeof (struct tmerc_data)));
-    if (nullptr==Q)
-        return pj_default_destructor (P, PROJ_ERR_OTHER /*ENOMEM*/);
-    P->opaque = Q;
-
-    if( P->es == 0 )
-        eAlg = TMercAlgo::EVENDEN_SNYDER;
-
-    switch( eAlg )
-    {
-        case TMercAlgo::EVENDEN_SNYDER:
-        {
-            P->destructor = destructor;
-            if( !setup_approx(P) )
-                return nullptr;
-            if( P->es == 0 )
-            {
-                P->inv = tmerc_spherical_inv;
-                P->fwd = tmerc_spherical_fwd;
-            }
-            else
-            {
-                P->inv = approx_e_inv;
-                P->fwd = approx_e_fwd;
-            }
-            break;
-        }
-
-        case TMercAlgo::PODER_ENGSAGER:
-        {
-            setup_exact(P);
-            P->inv = exact_e_inv;
-            P->fwd = exact_e_fwd;
-            break;
-        }
-
-        case TMercAlgo::AUTO:
-        {
-            P->destructor = destructor;
-            if( !setup_approx(P) )
-                return nullptr;
-            setup_exact(P);
-
-            P->inv = auto_e_inv;
-            P->fwd = auto_e_fwd;
-            break;
-        }
-    }
-    return P;
-}
-
-
-static bool getAlgoFromParams(PJ* P, TMercAlgo& algo)
-{
-    if( pj_param (P->ctx, P->params, "bapprox").i )
-    {
-        algo = TMercAlgo::EVENDEN_SNYDER;
-        return true;
-    }
-
-    const char* algStr = pj_param (P->ctx, P->params, "salgo").s;
-    if( algStr )
-    {
-        if( strcmp(algStr, "evenden_snyder") == 0 )
-        {
-            algo = TMercAlgo::EVENDEN_SNYDER;
-            return true;
-        }
-        if( strcmp(algStr, "poder_engsager") == 0 )
-        {
-            algo = TMercAlgo::PODER_ENGSAGER;
-            return true;
-        }
-        if( strcmp(algStr, "auto") == 0 )
-        {
-            algo = TMercAlgo::AUTO;
-            // Don't return so that we can run a later validity check
-        }
-        else
-        {
-            proj_log_error (P, "unknown value for +algo");
-            return false;
-        }
-    }
-    else
-    {
-        pj_load_ini(P->ctx); // if not already done
-        proj_context_errno_set(P->ctx, 0); // reset error in case proj.ini couldn't be found
-        algo = P->ctx->defaultTmercAlgo;
-    }
-
-    // We haven't worked on the criterion on inverse transformation
-    // when phi0 != 0 or if k0 is not close to 1 or for very oblate
-    // ellipsoid (es > 0.1 is ~ rf < 200)
-    if( algo == TMercAlgo::AUTO &&
-            (P->es > 0.1 || P->phi0 != 0 || fabs(P->k0 - 1) > 0.01) )
-    {
-        algo = TMercAlgo::PODER_ENGSAGER;
-    }
-
-    return true;
-}
 
 
 /*****************************************************************************/
@@ -702,38 +509,43 @@ static bool getAlgoFromParams(PJ* P, TMercAlgo& algo)
 PJ *PROJECTION(tmerc) {
     /* exact transverse mercator only exists in ellipsoidal form, */
     /* use approximate version if +a sphere is requested          */
+    if (pj_param (P->ctx, P->params, "bapprox").i || P->es <= 0) {
+        struct pj_opaque_approx *Q = static_cast<struct pj_opaque_approx*>(pj_calloc (1, sizeof (struct pj_opaque_approx)));
+        if (nullptr==Q)
+            return pj_default_destructor (P, ENOMEM);
 
-    TMercAlgo algo;
-    if( !getAlgoFromParams(P, algo) )
-    {
-        proj_log_error(P, _("Invalid value for algo"));
-        return pj_default_destructor(P, PROJ_ERR_INVALID_OP_ILLEGAL_ARG_VALUE);
+        P->opaque = Q;
+
+        return setup_approx(P);
+    } else {
+        struct pj_opaque_exact *Q = static_cast<struct pj_opaque_exact*>(pj_calloc (1, sizeof (struct pj_opaque_exact)));
+        if (nullptr==Q)
+            return pj_default_destructor (P, ENOMEM);
+        P->opaque = Q;
+       return setup_exact (P);
     }
-    return setup(P, algo);
 }
 
 
 PJ *PROJECTION(etmerc) {
-    if (P->es == 0.0) {
-        proj_log_error(P, _("Invalid value for eccentricity: it should not be zero"));
-        return pj_default_destructor(P, PROJ_ERR_INVALID_OP_ILLEGAL_ARG_VALUE);
-    }
-
-   return setup (P, TMercAlgo::PODER_ENGSAGER);
+    struct pj_opaque_exact *Q = static_cast<struct pj_opaque_exact*>(pj_calloc (1, sizeof (struct pj_opaque_exact)));
+    if (nullptr==Q)
+        return pj_default_destructor (P, ENOMEM);
+    P->opaque = Q;
+   return setup_exact (P);
 }
 
 
 /* UTM uses the Poder/Engsager implementation for the underlying projection      */
-/* UNLESS +approx is set in which case the Evenden/Snyder implementation is used. */
+/* UNLESS +approx is set in which case the Evenden/Snyder implemenation is used. */
 PJ *PROJECTION(utm) {
     long zone;
     if (P->es == 0.0) {
-        proj_log_error(P, _("Invalid value for eccentricity: it should not be zero"));
-        return pj_default_destructor(P, PROJ_ERR_INVALID_OP_ILLEGAL_ARG_VALUE);
+        proj_errno_set(P, PJD_ERR_ELLIPSOID_USE_REQUIRED);
+        return pj_default_destructor(P, ENOMEM);
     }
     if (P->lam0 < -1000.0 || P->lam0 > 1000.0) {
-        proj_log_error(P, _("Invalid value for lon_0"));
-        return pj_default_destructor(P, PROJ_ERR_INVALID_OP_ILLEGAL_ARG_VALUE);
+        return pj_default_destructor(P, PJD_ERR_INVALID_UTM_ZONE);
     }
 
     P->y0 = pj_param (P->ctx, P->params, "bsouth").i ? 10000000. : 0.;
@@ -744,8 +556,7 @@ PJ *PROJECTION(utm) {
         if (zone > 0 && zone <= 60)
             --zone;
         else {
-            proj_log_error(P, _("Invalid value for zone"));
-            return pj_default_destructor(P, PROJ_ERR_INVALID_OP_ILLEGAL_ARG_VALUE);
+            return pj_default_destructor(P, PJD_ERR_INVALID_UTM_ZONE);
         }
     }
     else /* nearest central meridian input */
@@ -760,11 +571,19 @@ PJ *PROJECTION(utm) {
     P->k0 = 0.9996;
     P->phi0 = 0.;
 
-    TMercAlgo algo;
-    if( !getAlgoFromParams(P, algo) )
-    {
-        proj_log_error(P, _("Invalid value for algo"));
-        return pj_default_destructor(P, PROJ_ERR_INVALID_OP_ILLEGAL_ARG_VALUE);
+    if (pj_param(P->ctx, P->params, "bapprox").i) {
+        struct pj_opaque_approx *Q = static_cast<struct pj_opaque_approx*>(pj_calloc (1, sizeof (struct pj_opaque_approx)));
+        if (nullptr==Q)
+            return pj_default_destructor (P, ENOMEM);
+        P->opaque = Q;
+
+        return setup_approx(P);
+    } else {
+        struct pj_opaque_exact *Q = static_cast<struct pj_opaque_exact*>(pj_calloc (1, sizeof (struct pj_opaque_exact)));
+        if (nullptr==Q)
+            return pj_default_destructor (P, ENOMEM);
+        P->opaque = Q;
+
+        return setup_exact(P);
     }
-    return setup(P, algo);
 }

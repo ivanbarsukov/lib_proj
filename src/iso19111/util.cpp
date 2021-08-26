@@ -81,17 +81,6 @@ BaseObjectNNPtr::~BaseObjectNNPtr() = default;
 
 // ---------------------------------------------------------------------------
 
-//! @cond Doxygen_Suppress
-// cppcheck-suppress operatorEqVarError
-BaseObject &BaseObject::operator=(BaseObject &&) {
-    d->self_.reset();
-    return *this;
-}
-
-//! @endcond
-
-// ---------------------------------------------------------------------------
-
 /** Keep a reference to ourselves as an internal weak pointer. So that
  * extractGeographicBaseObject() can later return a shared pointer on itself.
  */
@@ -697,7 +686,7 @@ IComparable::~IComparable() = default;
 
 /** \brief Returns whether an object is equivalent to another one.
  * @param other other object to compare to
- * @param criterion comparison criterion.
+ * @param criterion comparaison criterion.
  * @param dbContext Database context, or nullptr.
  * @return true if objects are equivalent.
  */

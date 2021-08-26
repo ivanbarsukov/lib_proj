@@ -96,6 +96,7 @@ Thomas Knudsen, thokn@sdfe.dk, 2016-05-20
 
 #define PJ_LIB__
 
+#include <errno.h>
 #include <math.h>
 #include <stddef.h>
 #include <string.h>
@@ -293,8 +294,8 @@ static PJ *destructor (PJ *P, int errlev) {
 
     auto pipeline = static_cast<struct Pipeline*>(P->opaque);
 
-    free (pipeline->argv);
-    free (pipeline->current_argv);
+    pj_dealloc (pipeline->argv);
+    pj_dealloc (pipeline->current_argv);
 
     delete pipeline;
     P->opaque = nullptr;
@@ -320,7 +321,7 @@ static const char *argv_sentinel = "step";
 static char **argv_params (paralist *params, size_t argc) {
     char **argv;
     size_t i = 0;
-    argv = static_cast<char**>(calloc (argc, sizeof (char *)));
+    argv = static_cast<char**>(pj_calloc (argc, sizeof (char *)));
     if (nullptr==argv)
         return nullptr;
     for (; params != nullptr; params = params->next)
@@ -423,16 +424,6 @@ PJ *OPERATION(pipeline,0) {
     int i_pipeline = -1, i_first_step = -1, i_current_step;
     char **argv, **current_argv;
 
-    if( P->ctx->pipelineInitRecursiongCounter == 5 )
-    {
-        // Can happen for a string like:
-        // proj=pipeline step "x="""," u=" proj=pipeline step ste=""[" u=" proj=pipeline step ste="[" u=" proj=pipeline step ste="[" u=" proj=pipeline step ste="[" u=" proj=pipeline step ste="[" u=" proj=pipeline step ste="[" u=" proj=pipeline step ste="[" u=" proj=pipeline step ste="[" u=" proj=pipeline p step ste="[" u=" proj=pipeline step ste="[" u=" proj=pipeline step ste="[" u=" proj=pipeline step ste="[" u=" proj=pipeline step ""x="""""""""""
-        // Probably an issue with the quoting handling code
-        // But doesn't hurt to add an extra safety check
-        proj_log_error (P, _("Pipeline: too deep recursion"));
-        return destructor (P, PROJ_ERR_INVALID_OP_WRONG_SYNTAX); /* ERROR: nested pipelines */
-    }
-
     P->fwd4d  =  pipeline_forward_4d;
     P->inv4d  =  pipeline_reverse_4d;
     P->fwd3d  =  pipeline_forward_3d;
@@ -452,24 +443,24 @@ PJ *OPERATION(pipeline,0) {
 
     P->opaque  = new (std::nothrow) Pipeline();
     if (nullptr==P->opaque)
-        return destructor(P, PROJ_ERR_INVALID_OP /* ENOMEM */);
+        return destructor(P, ENOMEM);
 
     argc = (int)argc_params (P->params);
     auto pipeline = static_cast<struct Pipeline*>(P->opaque);
     pipeline->argv = argv = argv_params (P->params, argc);
     if (nullptr==argv)
-        return destructor (P, PROJ_ERR_INVALID_OP /* ENOMEM */);
+        return destructor (P, ENOMEM);
 
-    pipeline->current_argv = current_argv = static_cast<char**>(calloc (argc, sizeof (char *)));
+    pipeline->current_argv = current_argv = static_cast<char**>(pj_calloc (argc, sizeof (char *)));
     if (nullptr==current_argv)
-        return destructor (P, PROJ_ERR_OTHER /*ENOMEM*/);
+        return destructor (P, ENOMEM);
 
     /* Do some syntactical sanity checking */
-    for (i = 0;  i < argc && argv[i] != nullptr;  i++) {
-        if ( 0==strcmp (argv_sentinel, argv[i])) {
+    for (i = 0;  i < argc;  i++) {
+        if (0==strcmp (argv_sentinel, argv[i])) {
             if (-1==i_pipeline) {
-                proj_log_error (P, _("Pipeline: +step before +proj=pipeline"));
-                return destructor (P, PROJ_ERR_INVALID_OP_WRONG_SYNTAX);
+                proj_log_error (P, "Pipeline: +step before +proj=pipeline");
+                return destructor (P, PJD_ERR_MALFORMED_PIPELINE);
             }
             if (0==nsteps)
                 i_first_step = i;
@@ -479,8 +470,8 @@ PJ *OPERATION(pipeline,0) {
 
         if (0==strcmp ("proj=pipeline", argv[i])) {
             if (-1 != i_pipeline) {
-                proj_log_error (P, _("Pipeline: Nesting only allowed when child pipelines are wrapped in '+init's"));
-                return destructor (P, PROJ_ERR_INVALID_OP_WRONG_SYNTAX); /* ERROR: nested pipelines */
+                proj_log_error (P, "Pipeline: Nesting only allowed when child pipelines are wrapped in '+init's");
+                return destructor (P, PJD_ERR_MALFORMED_PIPELINE); /* ERROR: nested pipelines */
             }
             i_pipeline = i;
         }
@@ -488,10 +479,10 @@ PJ *OPERATION(pipeline,0) {
     nsteps--; /* Last instance of +step is just a sentinel */
 
     if (-1==i_pipeline)
-        return destructor (P, PROJ_ERR_INVALID_OP_WRONG_SYNTAX); /* ERROR: no pipeline def */
+        return destructor (P, PJD_ERR_MALFORMED_PIPELINE); /* ERROR: no pipeline def */
 
     if (0==nsteps)
-        return destructor (P, PROJ_ERR_INVALID_OP_WRONG_SYNTAX); /* ERROR: no pipeline def */
+        return destructor (P, PJD_ERR_MALFORMED_PIPELINE); /* ERROR: no pipeline def */
 
     set_ellipsoid(P);
 
@@ -522,17 +513,15 @@ PJ *OPERATION(pipeline,0) {
 
         err = proj_errno_reset (P);
 
-        P->ctx->pipelineInitRecursiongCounter ++;
         next_step = pj_create_argv_internal (P->ctx, current_argc, current_argv);
-        P->ctx->pipelineInitRecursiongCounter --;
         proj_log_trace (P, "Pipeline: Step %d (%s) at %p", i, current_argv[0], next_step);
 
         if (nullptr==next_step) {
             /* The step init failed, but possibly without setting errno. If so, we say "malformed" */
             int err_to_report = proj_errno(P);
             if (0==err_to_report)
-                err_to_report = PROJ_ERR_INVALID_OP_WRONG_SYNTAX;
-            proj_log_error (P, _("Pipeline: Bad step definition: %s (%s)"), current_argv[0], proj_context_errno_string (P->ctx, err_to_report));
+                err_to_report = PJD_ERR_MALFORMED_PIPELINE;
+            proj_log_error (P, "Pipeline: Bad step definition: %s (%s)", current_argv[0], pj_strerrno (err_to_report));
             return destructor (P, err_to_report); /* ERROR: bad pipeline def */
         }
         next_step->parent = P;
@@ -561,8 +550,8 @@ PJ *OPERATION(pipeline,0) {
              (!Q->inverted && (Q->fwd || Q->fwd3d || Q->fwd4d) ) ) {
             continue;
         } else {
-            proj_log_error (P, _("Pipeline: A forward operation couldn't be constructed"));
-            return destructor (P, PROJ_ERR_INVALID_OP_WRONG_SYNTAX);
+            proj_log_error (P, "Pipeline: A forward operation couldn't be constructed");
+            return destructor (P, PJD_ERR_MALFORMED_PIPELINE);
         }
     }
 
@@ -611,8 +600,8 @@ PJ *OPERATION(pipeline,0) {
             continue;
 
         if ( curr_step_output != next_step_input ) {
-            proj_log_error (P, _("Pipeline: Mismatched units between step %d and %d"), i+1, i+2);
-            return destructor (P, PROJ_ERR_INVALID_OP_WRONG_SYNTAX);
+            proj_log_error (P, "Pipeline: Mismatched units between step %d and %d", i+1, i+2);
+            return destructor (P, PJD_ERR_MALFORMED_PIPELINE);
         }
     }
 
@@ -678,10 +667,10 @@ static PJ_COORD pop(PJ_COORD point, PJ *P) {
 
 
 static PJ *setup_pushpop(PJ *P) {
-    auto pushpop = static_cast<struct PushPop*>(calloc (1, sizeof(struct PushPop)));
+    auto pushpop = static_cast<struct PushPop*>(pj_calloc (1, sizeof(struct PushPop)));
     P->opaque = pushpop;
     if (nullptr==P->opaque)
-        return destructor(P, PROJ_ERR_OTHER /*ENOMEM*/);
+        return destructor(P, ENOMEM);
 
     if (pj_param_exists(P->params, "v_1"))
         pushpop->v1 = true;

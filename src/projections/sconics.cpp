@@ -48,28 +48,15 @@ static int phi12(PJ *P, double *del) {
     double p1, p2;
     int err = 0;
 
-    if (!pj_param(P->ctx, P->params, "tlat_1").i )
-    {
-        proj_log_error(P, _("Missing parameter: lat_1 should be specified"));
-        err = PROJ_ERR_INVALID_OP_ILLEGAL_ARG_VALUE;
-    }
-    else if ( !pj_param(P->ctx, P->params, "tlat_2").i)
-    {
-        proj_log_error(P, _("Missing parameter: lat_2 should be specified"));
-        err = PROJ_ERR_INVALID_OP_ILLEGAL_ARG_VALUE;
-    }
-    else
-    {
+    if (!pj_param(P->ctx, P->params, "tlat_1").i ||
+        !pj_param(P->ctx, P->params, "tlat_2").i) {
+        err = -41;
+    } else {
         p1 = pj_param(P->ctx, P->params, "rlat_1").f;
         p2 = pj_param(P->ctx, P->params, "rlat_2").f;
         *del = 0.5 * (p2 - p1);
-        const double sig = 0.5 * (p2 + p1);
-        static_cast<struct pj_opaque*>(P->opaque)->sig = sig;
-        err = (fabs(*del) < EPS || fabs(sig) < EPS) ? PROJ_ERR_INVALID_OP_ILLEGAL_ARG_VALUE : 0;
-        if( err )
-        {
-            proj_log_error(P, _("Illegal value for lat_1 and lat_2: |lat_1 - lat_2| and |lat_1 + lat_2| should be > 0"));
-        }
+        static_cast<struct pj_opaque*>(P->opaque)->sig = 0.5 * (p2 + p1);
+        err = (fabs(*del) < EPS || fabs(static_cast<struct pj_opaque*>(P->opaque)->sig) < EPS) ? PJD_ERR_ABS_LAT1_EQ_ABS_LAT2 : 0;
     }
     return err;
 }
@@ -103,8 +90,7 @@ static PJ_LP sconics_s_inverse (PJ_XY xy, PJ *P) {  /* Spheroidal, (and ellipsoi
     struct pj_opaque *Q = static_cast<struct pj_opaque*>(P->opaque);
     double rho;
 
-    xy.y = Q->rho_0 - xy.y;
-    rho = hypot (xy.x, xy.y);
+    rho = hypot (xy.x,  xy.y = Q->rho_0 - xy.y);
     if (Q->n < 0.) {
         rho = - rho;
         xy.x = - xy.x;
@@ -130,9 +116,9 @@ static PJ_LP sconics_s_inverse (PJ_XY xy, PJ *P) {  /* Spheroidal, (and ellipsoi
 static PJ *setup(PJ *P, enum Type type) {
     double del, cs;
     int err;
-    struct pj_opaque *Q = static_cast<struct pj_opaque*>(calloc (1, sizeof (struct pj_opaque)));
+    struct pj_opaque *Q = static_cast<struct pj_opaque*>(pj_calloc (1, sizeof (struct pj_opaque)));
     if (nullptr==Q)
-        return pj_default_destructor (P, PROJ_ERR_OTHER /*ENOMEM*/);
+        return pj_default_destructor (P, ENOMEM);
     P->opaque = Q;
     Q->type = type;
 
@@ -178,18 +164,14 @@ static PJ *setup(PJ *P, enum Type type) {
         Q->n = sin (Q->sig);
         Q->c2 = cos (del);
         Q->c1 = 1./tan (Q->sig);
-        del = P->phi0 - Q->sig;
-        if (fabs (del) - EPS10 >= M_HALFPI)
-        {
-            proj_log_error(P, _("Invalid value for lat_0/lat_1/lat_2: |lat_0 - 0.5 * (lat_1 + lat_2)| should be < 90°"));
-            return pj_default_destructor(P, PROJ_ERR_INVALID_OP_ILLEGAL_ARG_VALUE);
-        }
+        if (fabs (del = P->phi0 - Q->sig) - EPS10 >= M_HALFPI)
+            return pj_default_destructor(P, PJD_ERR_LAT_0_HALF_PI_FROM_MEAN);
+
         Q->rho_0 = Q->c2 * (Q->c1 - tan (del));
         break;
 
     case VITK1:
-        cs = tan (del);
-        Q->n = cs * sin (Q->sig) / del;
+        Q->n = (cs = tan (del)) * sin (Q->sig) / del;
         Q->rho_c = del / (cs * tan (Q->sig)) + Q->sig;
         Q->rho_0 = Q->rho_c - P->phi0;
         break;

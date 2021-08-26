@@ -43,17 +43,16 @@ static PJ_LP cea_e_inverse (PJ_XY xy, PJ *P) {          /* Ellipsoidal, inverse 
 
 static PJ_LP cea_s_inverse (PJ_XY xy, PJ *P) {           /* Spheroidal, inverse */
     PJ_LP lp = {0.0,0.0};
+    double t;
 
-    xy.y *= P->k0;
-    const double t = fabs(xy.y);
-    if (t - EPS <= 1.) {
+    if ((t = fabs(xy.y *= P->k0)) - EPS <= 1.) {
         if (t >= 1.)
             lp.phi = xy.y < 0. ? -M_HALFPI : M_HALFPI;
         else
             lp.phi = asin(xy.y);
         lp.lam = xy.x / P->k0;
     } else {
-        proj_errno_set(P, PROJ_ERR_COORD_TRANSFM_OUTSIDE_PROJECTION_DOMAIN);
+        proj_errno_set(P, PJD_ERR_TOLERANCE_CONDITION);
         return lp;
     }
     return (lp);
@@ -66,36 +65,31 @@ static PJ *destructor (PJ *P, int errlev) {                        /* Destructor
     if (nullptr==P->opaque)
         return pj_default_destructor (P, errlev);
 
-    free (static_cast<struct pj_opaque*>(P->opaque)->apa);
+    pj_dealloc (static_cast<struct pj_opaque*>(P->opaque)->apa);
     return pj_default_destructor (P, errlev);
 }
 
 
 PJ *PROJECTION(cea) {
     double t = 0.0;
-    struct pj_opaque *Q = static_cast<struct pj_opaque*>(calloc (1, sizeof (struct pj_opaque)));
+    struct pj_opaque *Q = static_cast<struct pj_opaque*>(pj_calloc (1, sizeof (struct pj_opaque)));
     if (nullptr==Q)
-        return pj_default_destructor (P, PROJ_ERR_OTHER /*ENOMEM*/);
+        return pj_default_destructor (P, ENOMEM);
     P->opaque = Q;
     P->destructor = destructor;
 
 
     if (pj_param(P->ctx, P->params, "tlat_ts").i) {
-        t = pj_param(P->ctx, P->params, "rlat_ts").f;
-        P->k0 = cos(t);
+        P->k0 = cos(t = pj_param(P->ctx, P->params, "rlat_ts").f);
         if (P->k0 < 0.)
-        {
-            proj_log_error(P, _("Invalid value for lat_ts: |lat_ts| should be <= 90°"));
-            return pj_default_destructor(P, PROJ_ERR_INVALID_OP_ILLEGAL_ARG_VALUE);
-        }
+            return pj_default_destructor (P, PJD_ERR_LAT_TS_LARGER_THAN_90);
     }
     if (P->es != 0.0) {
         t = sin(t);
         P->k0 /= sqrt(1. - P->es * t * t);
         P->e = sqrt(P->es);
-        Q->apa = pj_authset(P->es);
-        if (!(Q->apa))
-            return pj_default_destructor(P, PROJ_ERR_OTHER /*ENOMEM*/);
+        if (!(Q->apa = pj_authset(P->es)))
+            return pj_default_destructor(P, ENOMEM);
 
         Q->qp = pj_qsfn(1., P->e, P->one_es);
         P->inv = cea_e_inverse;

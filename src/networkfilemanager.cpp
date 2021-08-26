@@ -40,9 +40,24 @@
 #include "proj.h"
 #include "proj/internal/internal.hpp"
 #include "proj/internal/lru_cache.hpp"
-#include "proj/internal/mutex.hpp"
 #include "proj_internal.h"
 #include "sqlite3_utils.hpp"
+
+#ifdef __MINGW32__
+// mingw32-win32 doesn't implement std::mutex
+namespace {
+class MyMutex {
+  public:
+    // cppcheck-suppress functionStatic
+    void lock() { pj_acquire_lock(); }
+    // cppcheck-suppress functionStatic
+    void unlock() { pj_release_lock(); }
+};
+}
+#else
+#include <mutex>
+#define MyMutex std::mutex
+#endif
 
 #ifdef CURL_ENABLED
 #include <curl/curl.h>
@@ -137,7 +152,7 @@ class NetworkChunkCache {
     };
 
     lru11::Cache<
-        Key, std::shared_ptr<std::vector<unsigned char>>, NS_PROJ::mutex,
+        Key, std::shared_ptr<std::vector<unsigned char>>, MyMutex,
         std::unordered_map<
             Key,
             typename std::list<lru11::KeyValuePair<
@@ -161,7 +176,7 @@ class NetworkFilePropertiesCache {
     void clearMemoryCache();
 
   private:
-    lru11::Cache<std::string, FileProperties, NS_PROJ::mutex> cache_{};
+    lru11::Cache<std::string, FileProperties, MyMutex> cache_{};
 };
 
 // ---------------------------------------------------------------------------
@@ -824,51 +839,50 @@ void NetworkChunkCache::insert(PJ_CONTEXT *ctx, const std::string &url,
 
     // Lambda to recycle an existing entry that was either invalidated, or
     // least recently used.
-    const auto reuseExistingEntry =
-        [ctx, &blob, &diskCache, hDB, &url, chunkIdx,
-         &dataPtr](std::unique_ptr<SQLiteStatement> &stmtIn) {
-            const auto chunk_id = stmtIn->getInt64();
-            const auto data_id = stmtIn->getInt64();
-            if (data_id <= 0) {
-                pj_log(ctx, PJ_LOG_ERROR, "data_id <= 0");
+    const auto reuseExistingEntry = [ctx, &blob, &diskCache, hDB, &url,
+                                     chunkIdx, &dataPtr](
+        std::unique_ptr<SQLiteStatement> &stmtIn) {
+        const auto chunk_id = stmtIn->getInt64();
+        const auto data_id = stmtIn->getInt64();
+        if (data_id <= 0) {
+            pj_log(ctx, PJ_LOG_ERROR, "data_id <= 0");
+            return;
+        }
+
+        auto l_stmt =
+            diskCache->prepare("UPDATE chunk_data SET data = ? WHERE id = ?");
+        if (!l_stmt)
+            return;
+        l_stmt->bindBlob(blob.data(), blob.size());
+        l_stmt->bindInt64(data_id);
+        {
+            const auto ret2 = l_stmt->execute();
+            if (ret2 != SQLITE_DONE) {
+                pj_log(ctx, PJ_LOG_ERROR, "%s", sqlite3_errmsg(hDB));
                 return;
             }
+        }
 
-            auto l_stmt = diskCache->prepare(
-                "UPDATE chunk_data SET data = ? WHERE id = ?");
-            if (!l_stmt)
+        l_stmt = diskCache->prepare("UPDATE chunks SET url = ?, "
+                                    "offset = ?, data_size = ?, data_id = ? "
+                                    "WHERE id = ?");
+        if (!l_stmt)
+            return;
+        l_stmt->bindText(url.c_str());
+        l_stmt->bindInt64(chunkIdx * DOWNLOAD_CHUNK_SIZE);
+        l_stmt->bindInt64(dataPtr->size());
+        l_stmt->bindInt64(data_id);
+        l_stmt->bindInt64(chunk_id);
+        {
+            const auto ret2 = l_stmt->execute();
+            if (ret2 != SQLITE_DONE) {
+                pj_log(ctx, PJ_LOG_ERROR, "%s", sqlite3_errmsg(hDB));
                 return;
-            l_stmt->bindBlob(blob.data(), blob.size());
-            l_stmt->bindInt64(data_id);
-            {
-                const auto ret2 = l_stmt->execute();
-                if (ret2 != SQLITE_DONE) {
-                    pj_log(ctx, PJ_LOG_ERROR, "%s", sqlite3_errmsg(hDB));
-                    return;
-                }
             }
+        }
 
-            l_stmt =
-                diskCache->prepare("UPDATE chunks SET url = ?, "
-                                   "offset = ?, data_size = ?, data_id = ? "
-                                   "WHERE id = ?");
-            if (!l_stmt)
-                return;
-            l_stmt->bindText(url.c_str());
-            l_stmt->bindInt64(chunkIdx * DOWNLOAD_CHUNK_SIZE);
-            l_stmt->bindInt64(dataPtr->size());
-            l_stmt->bindInt64(data_id);
-            l_stmt->bindInt64(chunk_id);
-            {
-                const auto ret2 = l_stmt->execute();
-                if (ret2 != SQLITE_DONE) {
-                    pj_log(ctx, PJ_LOG_ERROR, "%s", sqlite3_errmsg(hDB));
-                    return;
-                }
-            }
-
-            diskCache->move_to_head(chunk_id);
-        };
+        diskCache->move_to_head(chunk_id);
+    };
 
     // Find if there is an invalidated chunk we can reuse
     stmt = diskCache->prepare(
@@ -1301,7 +1315,7 @@ std::unique_ptr<File> NetworkFile::open(PJ_CONTEXT *ctx, const char *filename) {
             errorBuffer.resize(strlen(errorBuffer.data()));
             pj_log(ctx, PJ_LOG_ERROR, "Cannot open %s: %s", filename,
                    errorBuffer.c_str());
-            proj_context_errno_set(ctx, PROJ_ERR_OTHER_NETWORK_ERROR);
+            pj_ctx_set_errno(ctx, PJD_ERR_NETWORK_ERROR);
         }
 
         bool ok = false;
@@ -1390,7 +1404,7 @@ size_t NetworkFile::read(void *buffer, size_t sizeBytes) {
                     &nRead, errorBuffer.size(), &errorBuffer[0],
                     m_ctx->networking.user_data);
                 if (!m_handle) {
-                    proj_context_errno_set(m_ctx, PROJ_ERR_OTHER_NETWORK_ERROR);
+                    pj_ctx_set_errno(m_ctx, PJD_ERR_NETWORK_ERROR);
                     return 0;
                 }
             } else {
@@ -1406,7 +1420,7 @@ size_t NetworkFile::read(void *buffer, size_t sizeBytes) {
                     pj_log(m_ctx, PJ_LOG_ERROR, "Cannot read in %s: %s",
                            m_url.c_str(), errorBuffer.c_str());
                 }
-                proj_context_errno_set(m_ctx, PROJ_ERR_OTHER_NETWORK_ERROR);
+                pj_ctx_set_errno(m_ctx, PJD_ERR_NETWORK_ERROR);
                 return 0;
             }
 
@@ -1508,8 +1522,7 @@ struct CurlFileHandle {
     CurlFileHandle(const CurlFileHandle &) = delete;
     CurlFileHandle &operator=(const CurlFileHandle &) = delete;
 
-    explicit CurlFileHandle(PJ_CONTEXT *ctx, const char *url, CURL *handle,
-                            const char *ca_bundle_path);
+    explicit CurlFileHandle(const char *url, CURL *handle);
     ~CurlFileHandle();
 
     static PROJ_NETWORK_HANDLE *
@@ -1581,59 +1594,28 @@ static std::string GetExecutableName() {
 
 // ---------------------------------------------------------------------------
 
-static void checkRet(PJ_CONTEXT *ctx, CURLcode code, int line) {
-    if (code != CURLE_OK) {
-        pj_log(ctx, PJ_LOG_ERROR, "curl_easy_setopt at line %d failed", line);
-    }
-}
-
-#define CHECK_RET(ctx, code) checkRet(ctx, code, __LINE__)
-
-// ---------------------------------------------------------------------------
-
-CurlFileHandle::CurlFileHandle(PJ_CONTEXT *ctx, const char *url, CURL *handle,
-                               const char *ca_bundle_path)
+CurlFileHandle::CurlFileHandle(const char *url, CURL *handle)
     : m_url(url), m_handle(handle) {
-    CHECK_RET(ctx, curl_easy_setopt(handle, CURLOPT_URL, m_url.c_str()));
+    curl_easy_setopt(handle, CURLOPT_URL, m_url.c_str());
 
     if (getenv("PROJ_CURL_VERBOSE"))
-        CHECK_RET(ctx, curl_easy_setopt(handle, CURLOPT_VERBOSE, 1));
+        curl_easy_setopt(handle, CURLOPT_VERBOSE, 1);
 
 // CURLOPT_SUPPRESS_CONNECT_HEADERS is defined in curl 7.54.0 or newer.
 #if LIBCURL_VERSION_NUM >= 0x073600
-    CHECK_RET(ctx,
-              curl_easy_setopt(handle, CURLOPT_SUPPRESS_CONNECT_HEADERS, 1L));
+    curl_easy_setopt(handle, CURLOPT_SUPPRESS_CONNECT_HEADERS, 1L);
 #endif
 
     // Enable following redirections.  Requires libcurl 7.10.1 at least.
-    CHECK_RET(ctx, curl_easy_setopt(handle, CURLOPT_FOLLOWLOCATION, 1));
-    CHECK_RET(ctx, curl_easy_setopt(handle, CURLOPT_MAXREDIRS, 10));
+    curl_easy_setopt(handle, CURLOPT_FOLLOWLOCATION, 1);
+    curl_easy_setopt(handle, CURLOPT_MAXREDIRS, 10);
 
     if (getenv("PROJ_UNSAFE_SSL")) {
-        CHECK_RET(ctx, curl_easy_setopt(handle, CURLOPT_SSL_VERIFYPEER, 0L));
-        CHECK_RET(ctx, curl_easy_setopt(handle, CURLOPT_SSL_VERIFYHOST, 0L));
+        curl_easy_setopt(handle, CURLOPT_SSL_VERIFYPEER, 0L);
+        curl_easy_setopt(handle, CURLOPT_SSL_VERIFYHOST, 0L);
     }
 
-    // Custom path to SSL certificates.
-    if (ca_bundle_path == nullptr) {
-        ca_bundle_path = getenv("PROJ_CURL_CA_BUNDLE");
-    }
-    if (ca_bundle_path == nullptr) {
-        // Name of environment variable used by the curl binary
-        ca_bundle_path = getenv("CURL_CA_BUNDLE");
-    }
-    if (ca_bundle_path == nullptr) {
-        // Name of environment variable used by the curl binary (tested
-        // after CURL_CA_BUNDLE
-        ca_bundle_path = getenv("SSL_CERT_FILE");
-    }
-    if (ca_bundle_path != nullptr) {
-        CHECK_RET(ctx,
-                  curl_easy_setopt(handle, CURLOPT_CAINFO, ca_bundle_path));
-    }
-
-    CHECK_RET(ctx,
-              curl_easy_setopt(handle, CURLOPT_ERRORBUFFER, m_szCurlErrBuf));
+    curl_easy_setopt(handle, CURLOPT_ERRORBUFFER, m_szCurlErrBuf);
 
     if (getenv("PROJ_NO_USERAGENT") == nullptr) {
         m_useragent = "PROJ " STR(PROJ_VERSION_MAJOR) "." STR(
@@ -1642,8 +1624,7 @@ CurlFileHandle::CurlFileHandle(PJ_CONTEXT *ctx, const char *url, CURL *handle,
         if (!exeName.empty()) {
             m_useragent = exeName + " using " + m_useragent;
         }
-        CHECK_RET(ctx, curl_easy_setopt(handle, CURLOPT_USERAGENT,
-                                        m_useragent.data()));
+        curl_easy_setopt(handle, CURLOPT_USERAGENT, m_useragent.data());
     }
 }
 
@@ -1701,9 +1682,8 @@ PROJ_NETWORK_HANDLE *CurlFileHandle::open(PJ_CONTEXT *ctx, const char *url,
     if (!hCurlHandle)
         return nullptr;
 
-    auto file = std::unique_ptr<CurlFileHandle>(new CurlFileHandle(
-        ctx, url, hCurlHandle,
-        ctx->ca_bundle_path.empty() ? nullptr : ctx->ca_bundle_path.c_str()));
+    auto file =
+        std::unique_ptr<CurlFileHandle>(new CurlFileHandle(url, hCurlHandle));
 
     double oldDelay = MIN_RETRY_DELAY_MS;
     std::string headers;
@@ -1714,20 +1694,19 @@ PROJ_NETWORK_HANDLE *CurlFileHandle::open(PJ_CONTEXT *ctx, const char *url,
                      offset + size_to_read - 1);
 
     while (true) {
-        CHECK_RET(ctx, curl_easy_setopt(hCurlHandle, CURLOPT_RANGE, szBuffer));
+        curl_easy_setopt(hCurlHandle, CURLOPT_RANGE, szBuffer);
 
         headers.clear();
         headers.reserve(16 * 1024);
-        CHECK_RET(ctx,
-                  curl_easy_setopt(hCurlHandle, CURLOPT_HEADERDATA, &headers));
-        CHECK_RET(ctx, curl_easy_setopt(hCurlHandle, CURLOPT_HEADERFUNCTION,
-                                        pj_curl_write_func));
+        curl_easy_setopt(hCurlHandle, CURLOPT_HEADERDATA, &headers);
+        curl_easy_setopt(hCurlHandle, CURLOPT_HEADERFUNCTION,
+                         pj_curl_write_func);
 
         body.clear();
         body.reserve(size_to_read);
-        CHECK_RET(ctx, curl_easy_setopt(hCurlHandle, CURLOPT_WRITEDATA, &body));
-        CHECK_RET(ctx, curl_easy_setopt(hCurlHandle, CURLOPT_WRITEFUNCTION,
-                                        pj_curl_write_func));
+        curl_easy_setopt(hCurlHandle, CURLOPT_WRITEDATA, &body);
+        curl_easy_setopt(hCurlHandle, CURLOPT_WRITEFUNCTION,
+                         pj_curl_write_func);
 
         file->m_szCurlErrBuf[0] = '\0';
 
@@ -1736,15 +1715,11 @@ PROJ_NETWORK_HANDLE *CurlFileHandle::open(PJ_CONTEXT *ctx, const char *url,
         long response_code = 0;
         curl_easy_getinfo(hCurlHandle, CURLINFO_HTTP_CODE, &response_code);
 
-        CHECK_RET(ctx,
-                  curl_easy_setopt(hCurlHandle, CURLOPT_HEADERDATA, nullptr));
-        CHECK_RET(ctx, curl_easy_setopt(hCurlHandle, CURLOPT_HEADERFUNCTION,
-                                        nullptr));
+        curl_easy_setopt(hCurlHandle, CURLOPT_HEADERDATA, nullptr);
+        curl_easy_setopt(hCurlHandle, CURLOPT_HEADERFUNCTION, nullptr);
 
-        CHECK_RET(ctx,
-                  curl_easy_setopt(hCurlHandle, CURLOPT_WRITEDATA, nullptr));
-        CHECK_RET(
-            ctx, curl_easy_setopt(hCurlHandle, CURLOPT_WRITEFUNCTION, nullptr));
+        curl_easy_setopt(hCurlHandle, CURLOPT_WRITEDATA, nullptr);
+        curl_easy_setopt(hCurlHandle, CURLOPT_WRITEFUNCTION, nullptr);
 
         if (response_code == 0 || response_code >= 300) {
             const double delay =
@@ -1813,20 +1788,19 @@ static size_t pj_curl_read_range(PJ_CONTEXT *ctx,
                      offset + size_to_read - 1);
 
     while (true) {
-        CHECK_RET(ctx, curl_easy_setopt(hCurlHandle, CURLOPT_RANGE, szBuffer));
+        curl_easy_setopt(hCurlHandle, CURLOPT_RANGE, szBuffer);
 
         headers.clear();
         headers.reserve(16 * 1024);
-        CHECK_RET(ctx,
-                  curl_easy_setopt(hCurlHandle, CURLOPT_HEADERDATA, &headers));
-        CHECK_RET(ctx, curl_easy_setopt(hCurlHandle, CURLOPT_HEADERFUNCTION,
-                                        pj_curl_write_func));
+        curl_easy_setopt(hCurlHandle, CURLOPT_HEADERDATA, &headers);
+        curl_easy_setopt(hCurlHandle, CURLOPT_HEADERFUNCTION,
+                         pj_curl_write_func);
 
         body.clear();
         body.reserve(size_to_read);
-        CHECK_RET(ctx, curl_easy_setopt(hCurlHandle, CURLOPT_WRITEDATA, &body));
-        CHECK_RET(ctx, curl_easy_setopt(hCurlHandle, CURLOPT_WRITEFUNCTION,
-                                        pj_curl_write_func));
+        curl_easy_setopt(hCurlHandle, CURLOPT_WRITEDATA, &body);
+        curl_easy_setopt(hCurlHandle, CURLOPT_WRITEFUNCTION,
+                         pj_curl_write_func);
 
         handle->m_szCurlErrBuf[0] = '\0';
 
@@ -1835,10 +1809,8 @@ static size_t pj_curl_read_range(PJ_CONTEXT *ctx,
         long response_code = 0;
         curl_easy_getinfo(hCurlHandle, CURLINFO_HTTP_CODE, &response_code);
 
-        CHECK_RET(ctx,
-                  curl_easy_setopt(hCurlHandle, CURLOPT_WRITEDATA, nullptr));
-        CHECK_RET(
-            ctx, curl_easy_setopt(hCurlHandle, CURLOPT_WRITEFUNCTION, nullptr));
+        curl_easy_setopt(hCurlHandle, CURLOPT_WRITEDATA, nullptr);
+        curl_easy_setopt(hCurlHandle, CURLOPT_WRITEFUNCTION, nullptr);
 
         if (response_code == 0 || response_code >= 300) {
             const double delay =
@@ -1975,7 +1947,7 @@ static bool is_rel_or_absolute_filename(const char *name) {
 static std::string build_url(PJ_CONTEXT *ctx, const char *name) {
     if (!is_tilde_slash(name) && !is_rel_or_absolute_filename(name) &&
         !starts_with(name, "http://") && !starts_with(name, "https://")) {
-        std::string remote_file(proj_context_get_url_endpoint(ctx));
+        std::string remote_file(pj_context_get_url_endpoint(ctx));
         if (!remote_file.empty()) {
             if (remote_file.back() != '/') {
                 remote_file += '/';
@@ -2025,16 +1997,16 @@ int proj_context_set_network_callbacks(
 // ---------------------------------------------------------------------------
 
 /** Enable or disable network access.
- *
- * This overrides the default endpoint in the PROJ configuration file or with
- * the PROJ_NETWORK environment variable.
- *
- * @param ctx PROJ context, or NULL
- * @param enable TRUE if network access is allowed.
- * @return TRUE if network access is possible. That is either libcurl is
- *         available, or an alternate interface has been set.
- * @since 7.0
- */
+*
+* This overrides the default endpoint in the PROJ configuration file or with
+* the PROJ_NETWORK environment variable.
+*
+* @param ctx PROJ context, or NULL
+* @param enable TRUE if network access is allowed.
+* @return TRUE if network access is possible. That is either libcurl is
+*         available, or an alternate interface has been set.
+* @since 7.0
+*/
 int proj_context_set_enable_network(PJ_CONTEXT *ctx, int enable) {
     if (ctx == nullptr) {
         ctx = pj_get_default_ctx();
@@ -2054,11 +2026,11 @@ int proj_context_set_enable_network(PJ_CONTEXT *ctx, int enable) {
 // ---------------------------------------------------------------------------
 
 /** Return if network access is enabled.
- *
- * @param ctx PROJ context, or NULL
- * @return TRUE if network access has been enabled
- * @since 7.0
- */
+*
+* @param ctx PROJ context, or NULL
+* @return TRUE if network access has been enabled
+* @since 7.0
+*/
 int proj_context_is_network_enabled(PJ_CONTEXT *ctx) {
     if (ctx == nullptr) {
         ctx = pj_get_default_ctx();
@@ -2082,14 +2054,14 @@ int proj_context_is_network_enabled(PJ_CONTEXT *ctx) {
 // ---------------------------------------------------------------------------
 
 /** Define the URL endpoint to query for remote grids.
- *
- * This overrides the default endpoint in the PROJ configuration file or with
- * the PROJ_NETWORK_ENDPOINT environment variable.
- *
- * @param ctx PROJ context, or NULL
- * @param url Endpoint URL. Must NOT be NULL.
- * @since 7.0
- */
+*
+* This overrides the default endpoint in the PROJ configuration file or with
+* the PROJ_NETWORK_ENDPOINT environment variable.
+*
+* @param ctx PROJ context, or NULL
+* @param url Endpoint URL. Must NOT be NULL.
+* @since 7.0
+*/
 void proj_context_set_url_endpoint(PJ_CONTEXT *ctx, const char *url) {
     if (ctx == nullptr) {
         ctx = pj_get_default_ctx();
@@ -2102,13 +2074,13 @@ void proj_context_set_url_endpoint(PJ_CONTEXT *ctx, const char *url) {
 // ---------------------------------------------------------------------------
 
 /** Enable or disable the local cache of grid chunks
- *
- * This overrides the setting in the PROJ configuration file.
- *
- * @param ctx PROJ context, or NULL
- * @param enabled TRUE if the cache is enabled.
- * @since 7.0
- */
+*
+* This overrides the setting in the PROJ configuration file.
+*
+* @param ctx PROJ context, or NULL
+* @param enabled TRUE if the cache is enabled.
+* @since 7.0
+*/
 void proj_grid_cache_set_enable(PJ_CONTEXT *ctx, int enabled) {
     if (ctx == nullptr) {
         ctx = pj_get_default_ctx();
@@ -2121,13 +2093,13 @@ void proj_grid_cache_set_enable(PJ_CONTEXT *ctx, int enabled) {
 // ---------------------------------------------------------------------------
 
 /** Override, for the considered context, the path and file of the local
- * cache of grid chunks.
- *
- * @param ctx PROJ context, or NULL
- * @param fullname Full name to the cache (encoded in UTF-8). If set to NULL,
- *                 caching will be disabled.
- * @since 7.0
- */
+* cache of grid chunks.
+*
+* @param ctx PROJ context, or NULL
+* @param fullname Full name to the cache (encoded in UTF-8). If set to NULL,
+*                 caching will be disabled.
+* @since 7.0
+*/
 void proj_grid_cache_set_filename(PJ_CONTEXT *ctx, const char *fullname) {
     if (ctx == nullptr) {
         ctx = pj_get_default_ctx();
@@ -2140,13 +2112,13 @@ void proj_grid_cache_set_filename(PJ_CONTEXT *ctx, const char *fullname) {
 // ---------------------------------------------------------------------------
 
 /** Override, for the considered context, the maximum size of the local
- * cache of grid chunks.
- *
- * @param ctx PROJ context, or NULL
- * @param max_size_MB Maximum size, in mega-bytes (1024*1024 bytes), or
- *                    negative value to set unlimited size.
- * @since 7.0
- */
+* cache of grid chunks.
+*
+* @param ctx PROJ context, or NULL
+* @param max_size_MB Maximum size, in mega-bytes (1024*1024 bytes), or
+*                    negative value to set unlimited size.
+* @since 7.0
+*/
 void proj_grid_cache_set_max_size(PJ_CONTEXT *ctx, int max_size_MB) {
     if (ctx == nullptr) {
         ctx = pj_get_default_ctx();
@@ -2168,12 +2140,12 @@ void proj_grid_cache_set_max_size(PJ_CONTEXT *ctx, int max_size_MB) {
 // ---------------------------------------------------------------------------
 
 /** Override, for the considered context, the time-to-live delay for
- * re-checking if the cached properties of files are still up-to-date.
- *
- * @param ctx PROJ context, or NULL
- * @param ttl_seconds Delay in seconds. Use negative value for no expiration.
- * @since 7.0
- */
+* re-checking if the cached properties of files are still up-to-date.
+*
+* @param ctx PROJ context, or NULL
+* @param ttl_seconds Delay in seconds. Use negative value for no expiration.
+* @since 7.0
+*/
 void proj_grid_cache_set_ttl(PJ_CONTEXT *ctx, int ttl_seconds) {
     if (ctx == nullptr) {
         ctx = pj_get_default_ctx();
@@ -2186,10 +2158,10 @@ void proj_grid_cache_set_ttl(PJ_CONTEXT *ctx, int ttl_seconds) {
 // ---------------------------------------------------------------------------
 
 /** Clear the local cache of grid chunks.
- *
- * @param ctx PROJ context, or NULL
- * @since 7.0
- */
+*
+* @param ctx PROJ context, or NULL
+* @since 7.0
+*/
 void proj_grid_cache_clear(PJ_CONTEXT *ctx) {
     if (ctx == nullptr) {
         ctx = pj_get_default_ctx();
@@ -2208,7 +2180,7 @@ void proj_grid_cache_clear(PJ_CONTEXT *ctx) {
  * use the "downloaded_file_properties" table of its grid cache database.
  * Consequently files manually placed in the user-writable
  * directory without using this function would be considered as
- * non-existing/obsolete and would be unconditionally downloaded again.
+ * non-existing/obsolete and would be unconditionnaly downloaded again.
  *
  * This function can only be used if networking is enabled, and either
  * the default curl network API or a custom one have been installed.
@@ -2220,7 +2192,7 @@ void proj_grid_cache_clear(PJ_CONTEXT *ctx) {
  *                           the delay between the last time it has been
  *                           verified and the current time exceeds the TTL
  *                           setting. This can save network accesses.
- *                           If set to TRUE, PROJ will unconditionally
+ *                           If set to TRUE, PROJ will unconditionnally
  *                           check from the server the recentness of the file.
  * @return TRUE if the file must be downloaded with proj_download_file()
  * @since 7.0
@@ -2241,8 +2213,7 @@ int proj_is_download_needed(PJ_CONTEXT *ctx, const char *url_or_filename,
     if (filename == nullptr)
         return false;
     const auto localFilename(
-        std::string(proj_context_get_user_writable_directory(ctx, false)) +
-        filename);
+        pj_context_get_user_writable_directory(ctx, false) + filename);
 
     auto f = NS_PROJ::FileManager::open(ctx, localFilename.c_str(),
                                         NS_PROJ::FileAccess::READ_ONLY);
@@ -2337,7 +2308,7 @@ int proj_is_download_needed(PJ_CONTEXT *ctx, const char *url_or_filename,
  * use the "downloaded_file_properties" table of its grid cache database.
  * Consequently files manually placed in the user-writable
  * directory without using this function would be considered as
- * non-existing/obsolete and would be unconditionally downloaded again.
+ * non-existing/obsolete and would be unconditionnaly downloaded again.
  *
  * This function can only be used if networking is enabled, and either
  * the default curl network API or a custom one have been installed.
@@ -2349,7 +2320,7 @@ int proj_is_download_needed(PJ_CONTEXT *ctx, const char *url_or_filename,
  *                           the delay between the last time it has been
  *                           verified and the current time exceeds the TTL
  *                           setting. This can save network accesses.
- *                           If set to TRUE, PROJ will unconditionally
+ *                           If set to TRUE, PROJ will unconditionnally
  *                           check from the server the recentness of the file.
  * @param progress_cbk Progress callback, or NULL.
  *                     The passed percentage is in the [0, 1] range.
@@ -2380,9 +2351,8 @@ int proj_download_file(PJ_CONTEXT *ctx, const char *url_or_filename,
     const char *filename = strrchr(url.c_str(), '/');
     if (filename == nullptr)
         return false;
-    const auto localFilename(
-        std::string(proj_context_get_user_writable_directory(ctx, true)) +
-        filename);
+    const auto localFilename(pj_context_get_user_writable_directory(ctx, true) +
+                             filename);
 
 #ifdef _WIN32
     const int nPID = GetCurrentProcessId();
@@ -2566,7 +2536,7 @@ std::string pj_context_get_grid_cache_filename(PJ_CONTEXT *ctx) {
     if (!ctx->gridChunkCache.filename.empty()) {
         return ctx->gridChunkCache.filename;
     }
-    const std::string path(proj_context_get_user_writable_directory(ctx, true));
+    const std::string path(pj_context_get_user_writable_directory(ctx, true));
     ctx->gridChunkCache.filename = path + "/cache.db";
     return ctx->gridChunkCache.filename;
 }

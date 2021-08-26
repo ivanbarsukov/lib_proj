@@ -4,6 +4,7 @@
 
 #include "proj.h"
 #include "proj_internal.h"
+#include "proj_api.h"
 
 PROJ_HEAD(calcofi,
     "Cal Coop Ocean Fish Invest Lines/Stations") "\n\tCyl, Sph&Ell";
@@ -44,7 +45,7 @@ static PJ_XY calcofi_e_forward (PJ_LP lp, PJ *P) {          /* Ellipsoidal, forw
                line as xy xy, r, o form a right triangle */
 
     if (fabs(fabs(lp.phi) - M_HALFPI) <= EPS10) {
-        proj_errno_set(P, PROJ_ERR_COORD_TRANSFM_OUTSIDE_PROJECTION_DOMAIN);
+        proj_errno_set(P, PJD_ERR_TOLERANCE_CONDITION);
         return xy;
     }
 
@@ -73,7 +74,7 @@ static PJ_XY calcofi_s_forward (PJ_LP lp, PJ *P) {           /* Spheroidal, forw
     double l2;
     double ry;
     if (fabs(fabs(lp.phi) - M_HALFPI) <= EPS10) {
-        proj_errno_set(P, PROJ_ERR_COORD_TRANSFM_OUTSIDE_PROJECTION_DOMAIN);
+        proj_errno_set(P, PJD_ERR_TOLERANCE_CONDITION);
         return xy;
     }
     xy.x = lp.lam;

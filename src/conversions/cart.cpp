@@ -98,7 +98,7 @@ PROJ_HEAD(cart,    "Geodetic/cartesian conversions");
     (WP2, below)
 
     These routines are probably not as robust at those in
-    geocent.c, at least they haven't been through as heavy
+    geocent.c, at least thay haven't been through as heavy
     use as their geocent sisters. Some care has been taken
     to avoid singularities, but extreme cases (e.g. setting
     es, the squared eccentricity, to 1), will cause havoc.
@@ -107,16 +107,17 @@ PROJ_HEAD(cart,    "Geodetic/cartesian conversions");
 
 
 /*********************************************************************/
-static double normal_radius_of_curvature (double a, double es, double sinphi) {
+static double normal_radius_of_curvature (double a, double es, double phi) {
 /*********************************************************************/
+    double s = sin(phi);
     if (es==0)
         return a;
     /* This is from WP.  HM formula 2-149 gives an a,b version */
-    return a / sqrt (1 - es*sinphi*sinphi);
+    return a / sqrt (1 - es*s*s);
 }
 
 /*********************************************************************/
-static double geocentric_radius (double a, double b, double cosphi, double sinphi) {
+static double geocentric_radius (double a, double b, double phi) {
 /*********************************************************************
     Return the geocentric radius at latitude phi, of an ellipsoid
     with semimajor axis a and semiminor axis b.
@@ -124,23 +125,22 @@ static double geocentric_radius (double a, double b, double cosphi, double sinph
     This is from WP2, but uses hypot() for potentially better
     numerical robustness
 ***********************************************************************/
-    return hypot (a*a*cosphi, b*b*sinphi) / hypot (a*cosphi, b*sinphi);
+    return hypot (a*a*cos (phi), b*b*sin(phi)) / hypot (a*cos(phi), b*sin(phi));
 }
 
 
 /*********************************************************************/
 static PJ_XYZ cartesian (PJ_LPZ geod,  PJ *P) {
 /*********************************************************************/
+    double N, cosphi = cos(geod.phi);
     PJ_XYZ xyz;
 
-    const double cosphi = cos(geod.phi);
-    const double sinphi = sin(geod.phi);
-    const double N   =  normal_radius_of_curvature(P->a, P->es, sinphi);
+    N   =  normal_radius_of_curvature(P->a, P->es, geod.phi);
 
     /* HM formula 5-27 (z formula follows WP) */
     xyz.x = (N + geod.z) * cosphi      * cos(geod.lam);
     xyz.y = (N + geod.z) * cosphi      * sin(geod.lam);
-    xyz.z = (N * (1 - P->es) + geod.z) * sinphi;
+    xyz.z = (N * (1 - P->es) + geod.z) * sin(geod.phi);
 
     return xyz;
 }
@@ -149,57 +149,41 @@ static PJ_XYZ cartesian (PJ_LPZ geod,  PJ *P) {
 /*********************************************************************/
 static PJ_LPZ geodetic (PJ_XYZ cart,  PJ *P) {
 /*********************************************************************/
+    double N, p, theta, c, s;
     PJ_LPZ lpz;
 
     /* Perpendicular distance from point to Z-axis (HM eq. 5-28) */
-    const double p = hypot (cart.x, cart.y);
+    p = hypot (cart.x, cart.y);
 
-#if 0
     /* HM eq. (5-37) */
-    const double theta  =  atan2 (cart.z * P->a,  p * P->b);
+    theta  =  atan2 (cart.z * P->a,  p * P->b);
 
     /* HM eq. (5-36) (from BB, 1976) */
-    const double c  =  cos(theta);
-    const double s  =  sin(theta);
-#else
-    const double y_theta = cart.z * P->a;
-    const double x_theta = p * P->b;
-    const double norm = hypot(y_theta, x_theta);
-    const double c = norm == 0 ? 1 : x_theta / norm;
-    const double s = norm == 0 ? 0 : y_theta / norm;
-#endif
-
-    const double y_phi = cart.z + P->e2s*P->b*s*s*s;
-    const double x_phi = p - P->es*P->a*c*c*c;
-    const double norm_phi = hypot(y_phi, x_phi);
-    double cosphi   = norm_phi == 0 ? 1 : x_phi / norm_phi;
-    double sinphi   = norm_phi == 0 ? 0 : y_phi / norm_phi;
-    if( x_phi <= 0 ) {
+    c  =  cos(theta);
+    s  =  sin(theta);
+    lpz.phi  =  atan2 (cart.z + P->e2s*P->b*s*s*s,  p - P->es*P->a*c*c*c);
+    if( fabs(lpz.phi) > M_HALFPI ) {
         // this happen on non-sphere ellipsoid when x,y,z is very close to 0
         // there is no single solution to the cart->geodetic conversion in
         // that case, clamp to -90/90 deg and avoid a discontinuous boundary
         // near the poles
-        lpz.phi = cart.z >= 0 ? M_HALFPI : -M_HALFPI;
-        cosphi = 0;
-        sinphi = cart.z >= 0 ? 1 : -1;
-    } else {
-        lpz.phi  =  atan (y_phi / x_phi);
+        lpz.phi = copysign(M_HALFPI, lpz.phi);
     }
     lpz.lam  =  atan2 (cart.y, cart.x);
+    N        =  normal_radius_of_curvature (P->a, P->es, lpz.phi);
 
-    if (cosphi < 1e-6) {
+
+    c  =  cos(lpz.phi);
+    if (fabs(c) < 1e-6) {
         /* poleward of 89.99994 deg, we avoid division by zero   */
         /* by computing the height as the cartesian z value      */
         /* minus the geocentric radius of the Earth at the given */
         /* latitude                                              */
-        const double r = geocentric_radius (P->a, P->b, cosphi, sinphi);
+        double r = geocentric_radius (P->a, P->b, lpz.phi);
         lpz.z = fabs (cart.z) - r;
     }
     else
-    {
-        const double N  =  normal_radius_of_curvature (P->a, P->es, sinphi);
-        lpz.z =  p / cosphi  -  N;
-    }
+        lpz.z =  p / c  -  N;
 
     return lpz;
 }

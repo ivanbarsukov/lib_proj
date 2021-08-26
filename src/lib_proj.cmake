@@ -53,7 +53,6 @@ endif()
 
 set(SRC_LIBPROJ_PROJECTIONS
   projections/aeqd.cpp
-  projections/adams.cpp
   projections/gnom.cpp
   projections/laea.cpp
   projections/mod_ster.cpp
@@ -131,7 +130,6 @@ set(SRC_LIBPROJ_PROJECTIONS
   projections/gn_sinu.cpp
   projections/goode.cpp
   projections/igh.cpp
-  projections/igh_o.cpp
   projections/hatano.cpp
   projections/loxim.cpp
   projections/mbt_fps.cpp
@@ -161,7 +159,6 @@ set(SRC_LIBPROJ_PROJECTIONS
   projections/natearth2.cpp
   projections/calcofi.cpp
   projections/eqearth.cpp
-  projections/col_urban.cpp
 )
 
 set(SRC_LIBPROJ_CONVERSIONS
@@ -170,7 +167,6 @@ set(SRC_LIBPROJ_CONVERSIONS
   conversions/geoc.cpp
   conversions/geocent.cpp
   conversions/noop.cpp
-  conversions/topocentric.cpp
   conversions/set.cpp
   conversions/unitconvert.cpp
 )
@@ -184,8 +180,6 @@ set(SRC_LIBPROJ_TRANSFORMATIONS
   transformations/molodensky.cpp
   transformations/vgridshift.cpp
   transformations/xyzgridshift.cpp
-  transformations/defmodel.cpp
-  transformations/tinshift.cpp
 )
 
 set(SRC_LIBPROJ_ISO19111
@@ -196,20 +190,11 @@ set(SRC_LIBPROJ_ISO19111
   iso19111/crs.cpp
   iso19111/datum.cpp
   iso19111/coordinatesystem.cpp
+  iso19111/coordinateoperation.cpp
   iso19111/io.cpp
   iso19111/internal.cpp
   iso19111/factory.cpp
   iso19111/c_api.cpp
-  iso19111/operation/concatenatedoperation.cpp
-  iso19111/operation/coordinateoperationfactory.cpp
-  iso19111/operation/conversion.cpp
-  iso19111/operation/esriparammappings.cpp
-  iso19111/operation/oputils.cpp
-  iso19111/operation/parammappings.cpp
-  iso19111/operation/projbasedoperation.cpp
-  iso19111/operation/singleoperation.cpp
-  iso19111/operation/transformation.cpp
-  iso19111/operation/vectorofvaluesparams.cpp
 )
 
 set(SRC_LIBPROJ_CORE
@@ -224,10 +209,13 @@ set(SRC_LIBPROJ_CORE
   dmstor.cpp
   ell_set.cpp
   ellps.cpp
+  errno.cpp
   factors.cpp
+  fileapi.cpp
   fwd.cpp
   gauss.cpp
-  generic_inverse.cpp
+  geocent.cpp
+  geocent.h
   geodesic.c
   init.cpp
   initcache.cpp
@@ -251,8 +239,10 @@ set(SRC_LIBPROJ_CORE
   rtodms.cpp
   strerrno.cpp
   strtod.cpp
+  transform.cpp
   tsfn.cpp
   units.cpp
+  utils.cpp
   wkt1_generated_parser.c
   wkt1_generated_parser.h
   wkt1_parser.cpp
@@ -278,6 +268,7 @@ set(SRC_LIBPROJ_CORE
 )
 
 set(HEADERS_LIBPROJ
+  proj_api.h
   proj.h
   proj_experimental.h
   proj_constants.h
@@ -302,6 +293,18 @@ include_directories(${CMAKE_SOURCE_DIR}/include)
 
 include_directories(${CMAKE_CURRENT_BINARY_DIR})
 source_group("CMake Files" FILES CMakeLists.txt)
+
+set(HEADERS_PUBLIC
+  ${CMAKE_SOURCE_DIR}/include/proj/util.hpp 
+  ${CMAKE_SOURCE_DIR}/include/proj/metadata.hpp 
+  ${CMAKE_SOURCE_DIR}/include/proj/common.hpp 
+  ${CMAKE_SOURCE_DIR}/include/proj/crs.hpp 
+  ${CMAKE_SOURCE_DIR}/include/proj/datum.hpp
+  ${CMAKE_SOURCE_DIR}/include/proj/coordinatesystem.hpp 
+  ${CMAKE_SOURCE_DIR}/include/proj/coordinateoperation.hpp 
+  ${CMAKE_SOURCE_DIR}/include/proj/io.hpp 
+  ${CMAKE_SOURCE_DIR}/include/proj/nn.hpp
+)
 
 # Embed PROJ_LIB data files location
 add_definitions(-DPROJ_LIB="${CMAKE_INSTALL_PREFIX}/${INSTALL_DATA_DIR}")
@@ -341,6 +344,7 @@ add_library(
   ${ALL_LIBPROJ_SOURCES}
   ${ALL_LIBPROJ_HEADERS}
   ${PROJ_RESOURCES}
+  ${HEADERS_PUBLIC}
 )
 target_compile_options(${PROJ_CORE_TARGET}
   PRIVATE $<$<COMPILE_LANGUAGE:C>:${PROJ_C_WARN_FLAGS}>
@@ -348,7 +352,7 @@ target_compile_options(${PROJ_CORE_TARGET}
 )
 
 if(OSX_FRAMEWORK)
-  set_property(SOURCE ${HEADERS_LIBPROJ} PROPERTY MACOSX_PACKAGE_LOCATION "Headers/proj")
+  set_property(SOURCE ${HEADERS_PUBLIC} PROPERTY MACOSX_PACKAGE_LOCATION "Headers/proj")
   set_target_properties(${PROJ_CORE_TARGET} PROPERTIES
     FRAMEWORK TRUE
     FRAMEWORK_VERSION ${FRAMEWORK_VERSION}

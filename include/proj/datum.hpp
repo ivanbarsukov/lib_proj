@@ -125,7 +125,7 @@ using DatumEnsembleNNPtr = util::nn<DatumEnsemblePtr>;
  *
  * \remark Implements DatumEnsemble from \ref ISO_19111_2019
  */
-class PROJ_GCC_DLL DatumEnsemble final : public common::ObjectUsage,
+class PROJ_GCC_DLL DatumEnsemble final : public common::IdentifiedObject,
                                          public io::IJSONExportable {
   public:
     //! @cond Doxygen_Suppress
@@ -147,10 +147,7 @@ class PROJ_GCC_DLL DatumEnsemble final : public common::ObjectUsage,
 
     PROJ_INTERNAL void _exportToJSON(io::JSONFormatter *formatter)
         const override; // throw(io::FormattingException)
-
-    PROJ_FOR_TEST DatumNNPtr
-    asDatum(const io::DatabaseContextPtr &dbContext) const;
-    //! @endcond
+                        //! @endcond
 
   protected:
 #ifdef DOXYGEN_ENABLED
@@ -544,7 +541,7 @@ class PROJ_GCC_DLL RealizationMethod : public util::CodeList {
     PROJ_FRIEND_OPTIONAL(RealizationMethod);
     PROJ_DLL explicit RealizationMethod(
         const std::string &nameIn = std::string());
-    PROJ_DLL RealizationMethod(const RealizationMethod &other) = default;
+    PROJ_DLL RealizationMethod(const RealizationMethod &other);
     PROJ_DLL RealizationMethod &operator=(const RealizationMethod &other);
 };
 
@@ -592,8 +589,6 @@ class PROJ_GCC_DLL VerticalReferenceFrame : public Datum {
 
     PROJ_INTERNAL void _exportToJSON(io::JSONFormatter *formatter)
         const override; // throw(FormattingException)
-
-    PROJ_INTERNAL const std::string &getWKT1DatumType() const;
 
     //! @endcond
 

@@ -25,6 +25,7 @@
  * DEALINGS IN THE SOFTWARE.
  *****************************************************************************/
 
+#include <errno.h>
 #include <string.h>
 
 #include "proj.h"
@@ -37,7 +38,7 @@
 /*                            pj_datum_set()                            */
 /************************************************************************/
 
-int pj_datum_set(PJ_CONTEXT *ctx, paralist *pl, PJ *projdef)
+int pj_datum_set(projCtx ctx, paralist *pl, PJ *projdef)
 
 {
     const char *name, *towgs84, *nadgrids;
@@ -70,8 +71,7 @@ int pj_datum_set(PJ_CONTEXT *ctx, paralist *pl, PJ *projdef)
         for (i = 0; (s = pj_datums[i].id) && strcmp(name, s) ; ++i) {}
 
         if (!s) {
-            pj_log (ctx, PJ_LOG_ERROR, _("Unknown value for datum"));
-            proj_context_errno_set(ctx, PROJ_ERR_INVALID_OP_ILLEGAL_ARG_VALUE);
+            pj_ctx_set_errno(ctx, PJD_ERR_UNKNOWN_ELLP_PARAM);
             return 1;
         }
 
@@ -84,27 +84,25 @@ int pj_datum_set(PJ_CONTEXT *ctx, paralist *pl, PJ *projdef)
                      sizeof(entry) - 1 - strlen(entry) );
             entry[ sizeof(entry) - 1 ] = '\0';
 
-            auto param = pj_mkparam(entry);
-            if (nullptr == param)
+            curr = curr->next = pj_mkparam(entry);
+            if (nullptr == curr)
             {
-                proj_context_errno_set(ctx, PROJ_ERR_OTHER /*ENOMEM*/);
+                pj_ctx_set_errno(ctx, ENOMEM);
                 return 1;
             }
-            curr->next = param;
-            curr = param;
         }
         
         if( pj_datums[i].defn && strlen(pj_datums[i].defn) > 0 )
         {
-            auto param = pj_mkparam(pj_datums[i].defn);
-            if (nullptr == param)
+            curr = curr->next = pj_mkparam(pj_datums[i].defn);
+            if (nullptr == curr)
             {
-                proj_context_errno_set(ctx, PROJ_ERR_OTHER /*ENOMEM*/);
+                pj_ctx_set_errno(ctx, ENOMEM);
                 return 1;
             }
-            curr->next = param;
-            /* curr = param; */
         }
+
+        (void)curr; /* make clang static analyzer happy */
     }
 
 /* -------------------------------------------------------------------- */

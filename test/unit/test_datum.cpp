@@ -409,7 +409,8 @@ TEST(datum, datum_ensemble) {
         PositionalAccuracy::create("100"));
     EXPECT_EQ(ensemble->datums().size(), 2U);
     EXPECT_EQ(ensemble->positionalAccuracy()->value(), "100");
-
+    EXPECT_THROW(ensemble->exportToWKT(WKTFormatter::create().get()),
+                 FormattingException);
     EXPECT_EQ(
         ensemble->exportToWKT(
             WKTFormatter::create(WKTFormatter::Convention::WKT2_2019).get()),
@@ -421,14 +422,6 @@ TEST(datum, datum_ensemble) {
         "        LENGTHUNIT[\"metre\",1],\n"
         "        ID[\"EPSG\",7030]],\n"
         "    ENSEMBLEACCURACY[100]]");
-
-    EXPECT_EQ(
-        ensemble->exportToWKT(
-            WKTFormatter::create(WKTFormatter::Convention::WKT2_2015).get()),
-        "DATUM[\"test\",\n"
-        "    ELLIPSOID[\"WGS 84\",6378137,298.257223563,\n"
-        "        LENGTHUNIT[\"metre\",1],\n"
-        "        ID[\"EPSG\",7030]]]");
 }
 
 // ---------------------------------------------------------------------------

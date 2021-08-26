@@ -1,7 +1,7 @@
 /******************************************************************************
  * Project:  PROJ.4
  * Purpose:  Initialize projection object from string definition.  Includes
- *           pj_init(), and pj_init_plus() function.
+ *           pj_init(), pj_init_plus() and pj_free() function.
  * Author:   Gerald Evenden, Frank Warmerdam <warmerdam@pobox.com>
  *
  ******************************************************************************
@@ -30,6 +30,7 @@
 #define PJ_LIB__
 
 #include <ctype.h>
+#include <errno.h>
 #include <math.h>
 #include <stddef.h>
 #include <stdio.h>
@@ -54,7 +55,7 @@ static paralist *string_to_paralist (PJ_CONTEXT *ctx, char *definition) {
         /* Keep a handle to the start of the list, so we have something to return */
         auto param = pj_mkparam_ws (c, &c);
         if (nullptr==param) {
-            free_params (ctx, first, PROJ_ERR_OTHER /*ENOMEM*/);
+            pj_dealloc_params (ctx, first, ENOMEM);
             return nullptr;
         }
         if (nullptr==last) {
@@ -83,7 +84,7 @@ static char *get_init_string (PJ_CONTEXT *ctx, const char *name) {
     char *buffer = nullptr;
     size_t n;
 
-    fname = static_cast<char*>(malloc (MAX_PATH_FILENAME+ID_TAG_MAX+3));
+    fname = static_cast<char*>(pj_malloc (MAX_PATH_FILENAME+ID_TAG_MAX+3));
     if (nullptr==fname) {
         return nullptr;
     }
@@ -95,7 +96,7 @@ static char *get_init_string (PJ_CONTEXT *ctx, const char *name) {
     else
         key += 5;
     if (MAX_PATH_FILENAME + ID_TAG_MAX + 2 < strlen (key)) {
-        free (fname);
+        pj_dealloc (fname);
         return nullptr;
     }
     memmove (fname, key, strlen (key) + 1);
@@ -103,9 +104,8 @@ static char *get_init_string (PJ_CONTEXT *ctx, const char *name) {
     /* Locate the name of the section we search for */
     section = strrchr(fname, ':');
     if (nullptr==section) {
-        pj_log(ctx, PJ_LOG_ERROR, _("Missing colon in +init"));
-        proj_context_errno_set (ctx, PROJ_ERR_INVALID_OP_ILLEGAL_ARG_VALUE);
-        free (fname);
+        proj_context_errno_set (ctx, PJD_ERR_NO_COLON_IN_INIT_STRING);
+        pj_dealloc (fname);
         return nullptr;
     }
     *section = 0;
@@ -117,9 +117,8 @@ static char *get_init_string (PJ_CONTEXT *ctx, const char *name) {
 
     auto file = NS_PROJ::FileManager::open_resource_file(ctx, fname);
     if (nullptr==file) {
-        pj_log(ctx, PJ_LOG_ERROR, _("Cannot open %s"), fname);
-        proj_context_errno_set (ctx, PROJ_ERR_INVALID_OP_ILLEGAL_ARG_VALUE);
-        free (fname);
+        pj_dealloc (fname);
+        proj_context_errno_set (ctx, PJD_ERR_NO_OPTION_IN_INIT_FILE);
         return nullptr;
     }
 
@@ -132,9 +131,8 @@ static char *get_init_string (PJ_CONTEXT *ctx, const char *name) {
         line = file->read_line(MAX_LINE_LENGTH, maxLenReached, eofReached);
         /* End of file? */
         if (maxLenReached || eofReached) {
-            pj_log(ctx, PJ_LOG_ERROR, _("Invalid content for %s"), fname);
-            proj_context_errno_set (ctx, PROJ_ERR_INVALID_OP_ILLEGAL_ARG_VALUE);
-            free (fname);
+            pj_dealloc (fname);
+            proj_context_errno_set (ctx, PJD_ERR_NO_OPTION_IN_INIT_FILE);
             return nullptr;
         }
 
@@ -151,9 +149,9 @@ static char *get_init_string (PJ_CONTEXT *ctx, const char *name) {
     }
 
     /* We're at the first line of the right section - copy line to buffer */
-    buffer = static_cast<char*>(malloc (current_buffer_size));
+    buffer = static_cast<char*>(pj_malloc (current_buffer_size));
     if (nullptr==buffer) {
-        free (fname);
+        pj_dealloc (fname);
         return nullptr;
     }
 
@@ -185,22 +183,22 @@ static char *get_init_string (PJ_CONTEXT *ctx, const char *name) {
         pj_chomp (&line[0]);   /* Remove '#' style comments */
         next_length = strlen (line.data()) + buffer_length + 2;
         if (next_length > current_buffer_size) {
-            char *b = static_cast<char*>(malloc (2 * current_buffer_size));
+            char *b = static_cast<char*>(pj_malloc (2 * current_buffer_size));
             if (nullptr==b) {
-                free (buffer);
+                pj_dealloc (buffer);
                 buffer = nullptr;
                 break;
             }
             strcpy (b, buffer);
             current_buffer_size *= 2;
-            free (buffer);
+            pj_dealloc (buffer);
             buffer = b;
         }
         buffer[buffer_length] = ' ';
         strcpy (buffer + buffer_length + 1, line.data());
     }
 
-    free (fname);
+    pj_dealloc (fname);
     if (nullptr==buffer)
         return nullptr;
     pj_shrink (buffer);
@@ -259,7 +257,7 @@ Expand key from buffer or (if not in buffer) from init file
             PJ* src;
             const char* proj_string;
 
-            proj_context_errno_set( ctx, 0 );
+            pj_ctx_set_errno( ctx, 0 );
 
             if( !allow_init_epsg ) {
                 pj_log (ctx, PJ_LOG_TRACE, "%s expansion disallowed", xkey);
@@ -308,7 +306,7 @@ Expand key from buffer or (if not in buffer) from init file
                 definition,
                 init_items->param,
                 init_items->next ? init_items->next->param : "(empty)");
-    free (definition);
+    pj_dealloc (definition);
     if (nullptr==init_items)
         return nullptr;
 
@@ -402,6 +400,90 @@ paralist *pj_expand_init(PJ_CONTEXT *ctx, paralist *init) {
 
 
 /************************************************************************/
+/*                            pj_init_plus()                            */
+/*                                                                      */
+/*      Same as pj_init() except it takes one argument string with      */
+/*      individual arguments preceded by '+', such as "+proj=utm        */
+/*      +zone=11 +ellps=WGS84".                                         */
+/************************************************************************/
+
+PJ *
+pj_init_plus( const char *definition )
+
+{
+    return pj_init_plus_ctx( pj_get_default_ctx(), definition );
+}
+
+PJ *
+pj_init_plus_ctx( projCtx ctx, const char *definition )
+{
+#define MAX_ARG 200
+    char	*argv[MAX_ARG];
+    char	*defn_copy;
+    int		argc = 0, i, blank_count = 0;
+    PJ	    *result = nullptr;
+
+    /* make a copy that we can manipulate */
+    defn_copy = (char *) pj_malloc( strlen(definition)+1 );
+    if (!defn_copy)
+        return nullptr;
+    strcpy( defn_copy, definition );
+
+    /* split into arguments based on '+' and trim white space */
+
+    for( i = 0; defn_copy[i] != '\0'; i++ )
+    {
+        switch( defn_copy[i] )
+        {
+          case '+':
+            if( i == 0 || defn_copy[i-1] == '\0' || blank_count > 0 )
+            {
+                /* trim trailing spaces from the previous param */
+                if( blank_count > 0 )
+                {
+                    defn_copy[i - blank_count] = '\0';
+                    blank_count = 0;
+                }
+
+                if( argc+1 == MAX_ARG )
+                {
+                    pj_dalloc( defn_copy );
+                    pj_ctx_set_errno( ctx, PJD_ERR_UNPARSEABLE_CS_DEF );
+                    return nullptr;
+                }
+
+                argv[argc++] = defn_copy + i + 1;
+            }
+            break;
+
+          case ' ':
+          case '\t':
+          case '\n':
+            /* trim leading spaces from the current param */
+            if( i == 0 || defn_copy[i-1] == '\0' || argc == 0 || argv[argc-1] == defn_copy + i )
+                defn_copy[i] = '\0';
+            else
+                blank_count++;
+            break;
+
+          default:
+            /* reset blank_count */
+            blank_count = 0;
+        }
+    }
+    /* trim trailing spaces from the last param */
+    defn_copy[i - blank_count] = '\0';
+
+    /* perform actual initialization */
+    result = pj_init_ctx( ctx, argc, argv );
+
+    pj_dalloc( defn_copy );
+    return result;
+}
+
+
+
+/************************************************************************/
 /*                              pj_init()                               */
 /*                                                                      */
 /*      Main entry point for initialing a PJ projections                */
@@ -409,6 +491,11 @@ paralist *pj_expand_init(PJ_CONTEXT *ctx, paralist *init) {
 /*      called to do the initial allocation so it can be created        */
 /*      large enough to hold projection specific parameters.            */
 /************************************************************************/
+
+PJ *
+pj_init(int argc, char **argv) {
+    return pj_init_ctx( pj_get_default_ctx(), argc, argv );
+}
 
 
 static PJ_CONSTRUCTOR locate_constructor (const char *name) {
@@ -424,7 +511,15 @@ static PJ_CONSTRUCTOR locate_constructor (const char *name) {
 
 
 PJ *
-pj_init_ctx_with_allow_init_epsg(PJ_CONTEXT *ctx, int argc, char **argv, int allow_init_epsg) {
+pj_init_ctx(projCtx ctx, int argc, char **argv) {
+    /* Legacy interface: allow init=epsg:XXXX syntax by default */
+    int allow_init_epsg = proj_context_get_use_proj4_init_rules(ctx, TRUE);
+    return pj_init_ctx_with_allow_init_epsg(ctx, argc, argv, allow_init_epsg);
+}
+
+
+PJ *
+pj_init_ctx_with_allow_init_epsg(projCtx ctx, int argc, char **argv, int allow_init_epsg) {
     const char *s;
     char *name;
     PJ_CONSTRUCTOR proj;
@@ -443,8 +538,7 @@ pj_init_ctx_with_allow_init_epsg(PJ_CONTEXT *ctx, int argc, char **argv, int all
     ctx->last_errno = 0;
 
     if (argc <= 0) {
-        pj_log(ctx, PJ_LOG_ERROR, _("No arguments"));
-        proj_context_errno_set (ctx, PROJ_ERR_INVALID_OP_MISSING_ARG);
+        pj_ctx_set_errno (ctx, PJD_ERR_NO_ARGS);
         return nullptr;
     }
 
@@ -458,15 +552,13 @@ pj_init_ctx_with_allow_init_epsg(PJ_CONTEXT *ctx, int argc, char **argv, int all
 
     /* can't have nested pipelines directly */
     if (n_pipelines > 1) {
-        pj_log(ctx, PJ_LOG_ERROR, _("Nested pipelines are not supported"));
-        proj_context_errno_set (ctx, PROJ_ERR_INVALID_OP_WRONG_SYNTAX);
+        pj_ctx_set_errno (ctx, PJD_ERR_MALFORMED_PIPELINE);
         return nullptr;
     }
 
     /* don't allow more than one +init in non-pipeline operations */
     if (n_pipelines == 0 && n_inits > 1) {
-        pj_log(ctx, PJ_LOG_ERROR, _("Too many inits"));
-        proj_context_errno_set (ctx, PROJ_ERR_INVALID_OP_WRONG_SYNTAX);
+        pj_ctx_set_errno (ctx, PJD_ERR_TOO_MANY_INITS);
         return nullptr;
     }
 
@@ -474,14 +566,14 @@ pj_init_ctx_with_allow_init_epsg(PJ_CONTEXT *ctx, int argc, char **argv, int all
     /* put arguments into internal linked list */
     start = curr = pj_mkparam(argv[0]);
     if (!curr) {
-        free_params (ctx, start, PROJ_ERR_OTHER /*ENOMEM*/);
+        pj_dealloc_params (ctx, start, ENOMEM);
         return nullptr;
     }
 
     for (i = 1; i < argc; ++i) {
         curr->next = pj_mkparam(argv[i]);
         if (!curr->next) {
-            free_params (ctx, start, PROJ_ERR_OTHER /*ENOMEM*/);
+            pj_dealloc_params (ctx, start, ENOMEM);
             return nullptr;
         }
         curr = curr->next;
@@ -496,34 +588,31 @@ pj_init_ctx_with_allow_init_epsg(PJ_CONTEXT *ctx, int argc, char **argv, int all
     if (init && n_pipelines == 0) {
         init = pj_expand_init_internal (ctx, init, allow_init_epsg);
         if (!init) {
-            free_params (ctx, start, PROJ_ERR_INVALID_OP_WRONG_SYNTAX);
+            pj_dealloc_params (ctx, start, PJD_ERR_NO_ARGS);
             return nullptr;
         }
     }
     if (ctx->last_errno) {
-        free_params (ctx, start, ctx->last_errno);
+        pj_dealloc_params (ctx, start, ctx->last_errno);
         return nullptr;
     }
 
     /* Find projection selection */
     curr = pj_param_exists (start, "proj");
     if (nullptr==curr) {
-        pj_log(ctx, PJ_LOG_ERROR, _("Missing proj"));
-        free_params (ctx, start, PROJ_ERR_INVALID_OP_MISSING_ARG);
+        pj_dealloc_params (ctx, start, PJD_ERR_PROJ_NOT_NAMED);
         return nullptr;
     }
     name =  curr->param;
     if (strlen (name) < 6) {
-        pj_log(ctx, PJ_LOG_ERROR, _("Invalid value for proj"));
-        free_params (ctx, start, PROJ_ERR_INVALID_OP_ILLEGAL_ARG_VALUE);
+        pj_dealloc_params (ctx, start, PJD_ERR_PROJ_NOT_NAMED);
         return nullptr;
     }
     name += 5;
 
     proj = locate_constructor (name);
     if (nullptr==proj) {
-        pj_log(ctx, PJ_LOG_ERROR, _("Unknown projection"));
-        free_params (ctx, start, PROJ_ERR_INVALID_OP_ILLEGAL_ARG_VALUE);
+        pj_dealloc_params (ctx, start, PJD_ERR_UNKNOWN_PROJECTION_ID);
         return nullptr;
     }
 
@@ -532,7 +621,7 @@ pj_init_ctx_with_allow_init_epsg(PJ_CONTEXT *ctx, int argc, char **argv, int all
     /* Allocate projection structure */
     PIN = proj(nullptr);
     if (nullptr==PIN) {
-        free_params (ctx, start, PROJ_ERR_OTHER /*ENOMEM*/);
+        pj_dealloc_params (ctx, start, ENOMEM);
         return nullptr;
     }
 
@@ -558,11 +647,11 @@ pj_init_ctx_with_allow_init_epsg(PJ_CONTEXT *ctx, int argc, char **argv, int all
     if (err) {
         /* Didn't get an ellps, but doesn't need one: Get a free WGS84 */
         if (PIN->need_ellps) {
-            pj_log (ctx, PJ_LOG_ERROR, _("pj_init_ctx: Must specify ellipsoid or sphere"));
+            pj_log (ctx, PJ_LOG_DEBUG_MINOR, "pj_init_ctx: Must specify ellipsoid or sphere");
             return pj_default_destructor (PIN, proj_errno(PIN));
         }
         else {
-            if (PIN->a == 0)
+            if (PJD_ERR_MAJOR_AXIS_NOT_GIVEN==proj_errno (PIN))
                 proj_errno_reset (PIN);
             PIN->f = 1.0/298.257223563;
             PIN->a  = 6378137.0;
@@ -572,7 +661,7 @@ pj_init_ctx_with_allow_init_epsg(PJ_CONTEXT *ctx, int argc, char **argv, int all
     PIN->a_orig = PIN->a;
     PIN->es_orig = PIN->es;
     if (pj_calc_ellipsoid_params (PIN, PIN->a, PIN->es))
-        return pj_default_destructor (PIN, PROJ_ERR_INVALID_OP_ILLEGAL_ARG_VALUE);
+        return pj_default_destructor (PIN, PJD_ERR_INVALID_ECCENTRICITY);
 
     /* Now that we have ellipse information check for WGS84 datum */
     if( PIN->datum_type == PJD_3PARAM
@@ -604,10 +693,7 @@ pj_init_ctx_with_allow_init_epsg(PJ_CONTEXT *ctx, int argc, char **argv, int all
         /* when correcting longitudes around it */
         /* The test is written this way to error on long_wrap_center "=" NaN */
         if( !(fabs(PIN->long_wrap_center) < 10 * M_TWOPI) )
-        {
-            proj_log_error(PIN, _("Invalid value for lon_wrap"));
-            return pj_default_destructor (PIN, PROJ_ERR_INVALID_OP_ILLEGAL_ARG_VALUE);
-        }
+            return pj_default_destructor (PIN, PJD_ERR_LAT_OR_LON_EXCEED_LIMIT);
     }
 
     /* Axis orientation */
@@ -616,18 +702,12 @@ pj_init_ctx_with_allow_init_epsg(PJ_CONTEXT *ctx, int argc, char **argv, int all
         const char *axis_legal = "ewnsud";
         const char *axis_arg = pj_param(ctx, start,"saxis").s;
         if( strlen(axis_arg) != 3 )
-        {
-            proj_log_error(PIN, _("Invalid value for axis"));
-            return pj_default_destructor (PIN, PROJ_ERR_INVALID_OP_ILLEGAL_ARG_VALUE);
-        }
+            return pj_default_destructor (PIN, PJD_ERR_AXIS);
 
         if( strchr( axis_legal, axis_arg[0] ) == nullptr
             || strchr( axis_legal, axis_arg[1] ) == nullptr
             || strchr( axis_legal, axis_arg[2] ) == nullptr)
-        {
-            proj_log_error(PIN, _("Invalid value for axis"));
-            return pj_default_destructor (PIN, PROJ_ERR_INVALID_OP_ILLEGAL_ARG_VALUE);
-        }
+            return pj_default_destructor (PIN, PJD_ERR_AXIS);
 
         /* TODO: it would be nice to validate we don't have on axis repeated */
         strcpy( PIN->axis, axis_arg );
@@ -639,10 +719,7 @@ pj_init_ctx_with_allow_init_epsg(PJ_CONTEXT *ctx, int argc, char **argv, int all
     /* Central latitude */
     PIN->phi0 = pj_param(ctx, start, "rlat_0").f;
     if( fabs(PIN->phi0) > M_HALFPI )
-    {
-        proj_log_error(PIN, _("Invalid value for lat_0: |lat_0| should be <= 90°"));
-        return pj_default_destructor (PIN, PROJ_ERR_INVALID_OP_ILLEGAL_ARG_VALUE);
-    }
+        return pj_default_destructor (PIN, PJD_ERR_LAT_LARGER_THAN_90);
 
     /* False easting and northing */
     PIN->x0 = pj_param(ctx, start, "dx_0").f;
@@ -658,21 +735,15 @@ pj_init_ctx_with_allow_init_epsg(PJ_CONTEXT *ctx, int argc, char **argv, int all
     else
         PIN->k0 = 1.;
     if (PIN->k0 <= 0.)
-    {
-        proj_log_error(PIN, _("Invalid value for k/k_0: it should be > 0"));
-        return pj_default_destructor (PIN, PROJ_ERR_INVALID_OP_ILLEGAL_ARG_VALUE);
-    }
+        return pj_default_destructor (PIN, PJD_ERR_K_LESS_THAN_ZERO);
 
     /* Set units */
-    units = pj_list_linear_units();
+    units = proj_list_units();
     s = nullptr;
     if ((name = pj_param(ctx, start, "sunits").s) != nullptr) {
         for (i = 0; (s = units[i].id) && strcmp(name, s) ; ++i) ;
         if (!s)
-        {
-            proj_log_error(PIN, _("Invalid value for units"));
-            return pj_default_destructor (PIN, PROJ_ERR_INVALID_OP_ILLEGAL_ARG_VALUE);
-        }
+            return pj_default_destructor (PIN, PJD_ERR_UNKNOWN_UNIT_ID);
         s = units[i].to_meter;
     }
     if (s || (s = pj_param(ctx, start, "sto_meter").s)) {
@@ -683,17 +754,11 @@ pj_init_ctx_with_allow_init_epsg(PJ_CONTEXT *ctx, int argc, char **argv, int all
             ++s;
             double denom = pj_strtod(s, nullptr);
             if (denom == 0.0)
-            {
-                proj_log_error(PIN, _("Invalid value for to_meter donominator"));
-                return pj_default_destructor (PIN, PROJ_ERR_INVALID_OP_ILLEGAL_ARG_VALUE);
-            }
+                return pj_default_destructor (PIN, PJD_ERR_UNIT_FACTOR_LESS_THAN_0);
             PIN->to_meter /= denom;
         }
         if (PIN->to_meter <= 0.0)
-        {
-            proj_log_error(PIN, _("Invalid value for to_meter"));
-            return pj_default_destructor (PIN, PROJ_ERR_INVALID_OP_ILLEGAL_ARG_VALUE);
-        }
+            return pj_default_destructor (PIN, PJD_ERR_UNIT_FACTOR_LESS_THAN_0);
         PIN->fr_meter = 1 / PIN->to_meter;
 
     } else
@@ -704,10 +769,7 @@ pj_init_ctx_with_allow_init_epsg(PJ_CONTEXT *ctx, int argc, char **argv, int all
     if ((name = pj_param(ctx, start, "svunits").s) != nullptr) {
         for (i = 0; (s = units[i].id) && strcmp(name, s) ; ++i) ;
         if (!s)
-        {
-            proj_log_error(PIN, _("Invalid value for vunits"));
-            return pj_default_destructor (PIN, PROJ_ERR_INVALID_OP_ILLEGAL_ARG_VALUE);
-        }
+            return pj_default_destructor (PIN, PJD_ERR_UNKNOWN_UNIT_ID);
         s = units[i].to_meter;
     }
     if (s || (s = pj_param(ctx, start, "svto_meter").s)) {
@@ -718,17 +780,11 @@ pj_init_ctx_with_allow_init_epsg(PJ_CONTEXT *ctx, int argc, char **argv, int all
             ++s;
             double denom = pj_strtod(s, nullptr);
             if (denom == 0.0)
-            {
-                proj_log_error(PIN, _("Invalid value for vto_meter donominator"));
-                return pj_default_destructor (PIN, PROJ_ERR_INVALID_OP_ILLEGAL_ARG_VALUE);
-            }
+                return pj_default_destructor (PIN, PJD_ERR_UNIT_FACTOR_LESS_THAN_0);
             PIN->vto_meter /= denom;
         }
         if (PIN->vto_meter <= 0.0)
-        {
-            proj_log_error(PIN, _("Invalid value for vto_meter"));
-            return pj_default_destructor (PIN, PROJ_ERR_INVALID_OP_ILLEGAL_ARG_VALUE);
-        }
+            return pj_default_destructor (PIN, PJD_ERR_UNIT_FACTOR_LESS_THAN_0);
         PIN->vfr_meter = 1. / PIN->vto_meter;
     } else {
         PIN->vto_meter = PIN->to_meter;
@@ -757,26 +813,23 @@ pj_init_ctx_with_allow_init_epsg(PJ_CONTEXT *ctx, int argc, char **argv, int all
             value = name;
 
         if (!value)
-        {
-            proj_log_error(PIN, _("Invalid value for pm"));
-            return pj_default_destructor (PIN, PROJ_ERR_INVALID_OP_ILLEGAL_ARG_VALUE);
-        }
+            return pj_default_destructor (PIN, PJD_ERR_UNKNOWN_PRIME_MERIDIAN);
         PIN->from_greenwich = dmstor_ctx(ctx,value,nullptr);
     }
     else
         PIN->from_greenwich = 0.0;
 
     /* Private object for the geodesic functions */
-    PIN->geod = static_cast<struct geod_geodesic*>(calloc (1, sizeof (struct geod_geodesic)));
+    PIN->geod = static_cast<struct geod_geodesic*>(pj_calloc (1, sizeof (struct geod_geodesic)));
     if (nullptr==PIN->geod)
-        return pj_default_destructor (PIN, PROJ_ERR_OTHER /*ENOMEM*/);
+        return pj_default_destructor (PIN, ENOMEM);
     geod_init(PIN->geod, PIN->a,  (1 - sqrt (1 - PIN->es)));
 
     /* Projection specific initialization */
     err = proj_errno_reset (PIN);
     PIN = proj(PIN);
     if (proj_errno (PIN)) {
-        proj_destroy(PIN);
+        pj_free(PIN);
         return nullptr;
     }
     proj_errno_restore (PIN, err);

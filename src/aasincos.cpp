@@ -9,24 +9,24 @@
 #define ATOL 1e-50
 
         double
-aasin(PJ_CONTEXT *ctx,double v) {
+aasin(projCtx ctx,double v) {
         double av;
 
         if ((av = fabs(v)) >= 1.) {
                 if (av > ONE_TOL)
-                        proj_context_errno_set( ctx, PROJ_ERR_COORD_TRANSFM_OUTSIDE_PROJECTION_DOMAIN );
+                        pj_ctx_set_errno( ctx, PJD_ERR_ACOS_ASIN_ARG_TOO_LARGE );
                 return (v < 0. ? -M_HALFPI : M_HALFPI);
         }
         return asin(v);
 }
 
         double
-aacos(PJ_CONTEXT *ctx, double v) {
+aacos(projCtx ctx, double v) {
         double av;
 
         if ((av = fabs(v)) >= 1.) {
                 if (av > ONE_TOL)
-                        proj_context_errno_set( ctx, PROJ_ERR_COORD_TRANSFM_OUTSIDE_PROJECTION_DOMAIN );
+                        pj_ctx_set_errno( ctx, PJD_ERR_ACOS_ASIN_ARG_TOO_LARGE );
                 return (v < 0. ? M_PI : 0.);
         }
         return acos(v);

@@ -6,13 +6,9 @@
 #include <time.h>
 
 #include "proj_internal.h"
-#include "proj/internal/mutex.hpp"
 #include "grids.hpp"
 
 PROJ_HEAD(hgridshift, "Horizontal grid shift");
-
-static NS_PROJ::mutex gMutex{};
-static std::set<std::string> gKnownGrids{};
 
 using namespace NS_PROJ;
 
@@ -140,8 +136,8 @@ PJ *TRANSFORMATION(hgridshift,0) {
     P->right = PJ_IO_UNITS_RADIANS;
 
     if (0==pj_param(P->ctx, P->params, "tgrids").i) {
-        proj_log_error(P, _("+grids parameter missing."));
-        return destructor (P, PROJ_ERR_INVALID_OP_MISSING_ARG);
+        proj_log_error(P, "hgridshift: +grids parameter missing.");
+        return destructor (P, PJD_ERR_NO_ARGS);
     }
 
     /* TODO: Refactor into shared function that can be used  */
@@ -164,35 +160,18 @@ PJ *TRANSFORMATION(hgridshift,0) {
     if (pj_param(P->ctx, P->params, "tt_epoch").i)
         Q->t_epoch = pj_param (P->ctx, P->params, "dt_epoch").f;
 
+
     if( P->ctx->defer_grid_opening ) {
         Q->defer_grid_opening = true;
     }
     else {
-        const char *gridnames = pj_param(P->ctx, P->params, "sgrids").s;
-        gMutex.lock();
-        const bool isKnownGrid = gKnownGrids.find(gridnames) != gKnownGrids.end();
-        gMutex.unlock();
-        if( isKnownGrid ) {
-            Q->defer_grid_opening = true;
+        Q->grids = pj_hgrid_init(P, "grids");
+        /* Was gridlist compiled properly? */
+        if ( proj_errno(P) ) {
+            proj_log_error(P, "hgridshift: could not find required grid(s).");
+            return destructor(P, PJD_ERR_FAILED_TO_LOAD_GRID);
         }
-        else {
-            Q->grids = pj_hgrid_init(P, "grids");
-            /* Was gridlist compiled properly? */
-            if ( proj_errno(P) ) {
-                proj_log_error(P, _("could not find required grid(s)."));
-                return destructor(P, PROJ_ERR_INVALID_OP_FILE_NOT_FOUND_OR_INVALID);
-            }
-
-            gMutex.lock();
-            gKnownGrids.insert(gridnames);
-            gMutex.unlock();
-        }
-    }
+     }
 
     return P;
-}
-
-void pj_clear_hgridshift_knowngrids_cache() {
-    NS_PROJ::lock_guard<NS_PROJ::mutex> lock(gMutex);
-    gKnownGrids.clear();
 }

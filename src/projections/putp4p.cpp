@@ -22,8 +22,7 @@ static PJ_XY putp4p_s_forward (PJ_LP lp, PJ *P) {           /* Spheroidal, forwa
 
     lp.phi = aasin(P->ctx,0.883883476 * sin(lp.phi));
     xy.x = Q->C_x * lp.lam * cos(lp.phi);
-    lp.phi *= 0.333333333333333;
-    xy.x /= cos(lp.phi);
+    xy.x /= cos(lp.phi *= 0.333333333333333);
     xy.y = Q->C_y * sin(lp.phi);
 
     return xy;
@@ -45,9 +44,9 @@ static PJ_LP putp4p_s_inverse (PJ_XY xy, PJ *P) {           /* Spheroidal, inver
 
 
 PJ *PROJECTION(putp4p) {
-    struct pj_opaque *Q = static_cast<struct pj_opaque*>(calloc (1, sizeof (struct pj_opaque)));
+    struct pj_opaque *Q = static_cast<struct pj_opaque*>(pj_calloc (1, sizeof (struct pj_opaque)));
     if (nullptr==Q)
-        return pj_default_destructor (P, PROJ_ERR_OTHER /*ENOMEM*/);
+        return pj_default_destructor (P, ENOMEM);
     P->opaque = Q;
 
     Q->C_x = 0.874038744;
@@ -62,9 +61,9 @@ PJ *PROJECTION(putp4p) {
 
 
 PJ *PROJECTION(weren) {
-    struct pj_opaque *Q = static_cast<struct pj_opaque*>(calloc (1, sizeof (struct pj_opaque)));
+    struct pj_opaque *Q = static_cast<struct pj_opaque*>(pj_calloc (1, sizeof (struct pj_opaque)));
     if (nullptr==Q)
-        return pj_default_destructor (P, PROJ_ERR_OTHER /*ENOMEM*/);
+        return pj_default_destructor (P, ENOMEM);
     P->opaque = Q;
 
     Q->C_x = 1.;

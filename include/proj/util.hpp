@@ -92,15 +92,6 @@ namespace proj {}
 #include "nn.hpp"
 
 /* To allow customizing the base namespace of PROJ */
-#ifdef PROJ_INTERNAL_CPP_NAMESPACE
-#define NS_PROJ osgeo::internalproj
-#define NS_PROJ_START                                                          \
-    namespace osgeo {                                                          \
-    namespace internalproj {
-#define NS_PROJ_END                                                            \
-    }                                                                          \
-    }
-#else
 #ifndef NS_PROJ
 #define NS_PROJ osgeo::proj
 #define NS_PROJ_START                                                          \
@@ -109,7 +100,6 @@ namespace proj {}
 #define NS_PROJ_END                                                            \
     }                                                                          \
     }
-#endif
 #endif
 
 // Private-implementation (Pimpl) pattern
@@ -180,7 +170,7 @@ NS_PROJ_START
 namespace io {
 class DatabaseContext;
 using DatabaseContextPtr = std::shared_ptr<DatabaseContext>;
-} // namespace io
+}
 //! @endcond
 
 /** osgeo.proj.util namespace.
@@ -212,14 +202,6 @@ template <typename T> using nn_shared_ptr = nn<std::shared_ptr<T>>;
 
 // To avoid formatting differences between clang-format 3.8 and 7
 #define PROJ_NOEXCEPT noexcept
-
-//! @cond Doxygen_Suppress
-// isOfExactType<MyType>(*p) checks that the type of *p is exactly MyType
-template <typename TemplateT, typename ObjectT>
-inline bool isOfExactType(const ObjectT &o) {
-    return typeid(TemplateT).hash_code() == typeid(o).hash_code();
-}
-//! @endcond
 
 /** \brief Loose transposition of [std::optional]
  * (https://en.cppreference.com/w/cpp/utility/optional) available from C++17. */
@@ -314,7 +296,7 @@ struct BaseObjectNNPtr : public util::nn<BaseObjectPtr> {
 using BaseObjectNNPtr = util::nn<BaseObjectPtr>;
 #endif
 
-/** \brief Class that can be derived from, to emulate Java's Object behavior.
+/** \brief Class that can be derived from, to emulate Java's Object behaviour.
  */
 class PROJ_GCC_DLL BaseObject {
   public:
@@ -331,7 +313,6 @@ class PROJ_GCC_DLL BaseObject {
   protected:
     PROJ_INTERNAL BaseObject();
     PROJ_INTERNAL void assignSelf(const BaseObjectNNPtr &self);
-    PROJ_INTERNAL BaseObject &operator=(BaseObject &&other);
 
   private:
     PROJ_OPAQUE_PRIVATE_DATA
@@ -701,7 +682,7 @@ class CodeList {
     //! @endcond
   protected:
     explicit CodeList(const std::string &nameIn) : name_(nameIn) {}
-    CodeList(const CodeList &) = default;
+    CodeList(const CodeList &other) = default;
     CodeList &operator=(const CodeList &other);
 
   private:

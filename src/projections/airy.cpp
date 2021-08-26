@@ -74,14 +74,13 @@ static PJ_XY airy_s_forward (PJ_LP lp, PJ *P) {           /* Spheroidal, forward
         if (Q->mode == OBLIQ)
             cosz = Q->sinph0 * sinphi + Q->cosph0 * cosz;
         if (!Q->no_cut && cosz < -EPS) {
-            proj_errno_set(P, PROJ_ERR_COORD_TRANSFM_OUTSIDE_PROJECTION_DOMAIN);
+            proj_errno_set(P, PJD_ERR_TOLERANCE_CONDITION);
             return xy;
         }
-        s = 1. - cosz;
-        if (fabs(s) > EPS) {
+        if (fabs(s = 1. - cosz) > EPS) {
             t = 0.5 * (1. + cosz);
             if(t == 0) {
-                proj_errno_set(P, PROJ_ERR_COORD_TRANSFM_OUTSIDE_PROJECTION_DOMAIN);
+                proj_errno_set(P, PJD_ERR_TOLERANCE_CONDITION);
                 return xy;
             }
             Krho = -log(t)/s - Q->Cb / t;
@@ -89,7 +88,8 @@ static PJ_XY airy_s_forward (PJ_LP lp, PJ *P) {           /* Spheroidal, forward
             Krho = 0.5 - Q->Cb;
         xy.x = Krho * cosphi * sinlam;
         if (Q->mode == OBLIQ)
-            xy.y = Krho * (Q->cosph0 * sinphi - Q->sinph0 * cosphi * coslam);
+            xy.y = Krho * (Q->cosph0 * sinphi -
+                Q->sinph0 * cosphi * coslam);
         else
             xy.y = Krho * sinphi;
         break;
@@ -97,11 +97,10 @@ static PJ_XY airy_s_forward (PJ_LP lp, PJ *P) {           /* Spheroidal, forward
     case N_POLE:
         lp.phi = fabs(Q->p_halfpi - lp.phi);
         if (!Q->no_cut && (lp.phi - EPS) > M_HALFPI) {
-            proj_errno_set(P, PROJ_ERR_COORD_TRANSFM_OUTSIDE_PROJECTION_DOMAIN);
+            proj_errno_set(P, PJD_ERR_TOLERANCE_CONDITION);
             return xy;
         }
-        lp.phi *= 0.5;
-        if (lp.phi > EPS) {
+        if ((lp.phi *= 0.5) > EPS) {
             t = tan(lp.phi);
             Krho = -2.*(log(cos(lp.phi)) / t + t * Q->Cb);
             xy.x = Krho * sinlam;
@@ -120,9 +119,9 @@ static PJ_XY airy_s_forward (PJ_LP lp, PJ *P) {           /* Spheroidal, forward
 PJ *PROJECTION(airy) {
     double beta;
 
-    struct pj_opaque *Q = static_cast<struct pj_opaque*>(calloc (1, sizeof (struct pj_opaque)));
+    struct pj_opaque *Q = static_cast<struct pj_opaque*>(pj_calloc (1, sizeof (struct pj_opaque)));
     if (nullptr==Q)
-        return pj_default_destructor (P, PROJ_ERR_OTHER /*ENOMEM*/);
+        return pj_default_destructor (P, ENOMEM);
 
     P->opaque = Q;
 

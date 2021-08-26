@@ -78,7 +78,7 @@ class File {
     std::string name_;
     std::string readLineBuffer_{};
     bool eofReadLine_ = false;
-    explicit File(const std::string &filename);
+    explicit File(const std::string &name);
 
   public:
     virtual PROJ_DLL ~File();

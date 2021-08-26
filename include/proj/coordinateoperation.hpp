@@ -583,18 +583,18 @@ class PROJ_GCC_DLL SingleOperation : virtual public CoordinateOperation {
     PROJ_DLL const OperationMethodNNPtr &method() PROJ_PURE_DECL;
 
     PROJ_DLL const ParameterValuePtr &
-    parameterValue(const std::string &paramName,
-                   int epsg_code = 0) const noexcept;
+    parameterValue(const std::string &paramName, int epsg_code = 0) const
+        noexcept;
 
-    PROJ_DLL const ParameterValuePtr &
-    parameterValue(int epsg_code) const noexcept;
-
-    PROJ_DLL const common::Measure &
-    parameterValueMeasure(const std::string &paramName,
-                          int epsg_code = 0) const noexcept;
+    PROJ_DLL const ParameterValuePtr &parameterValue(int epsg_code) const
+        noexcept;
 
     PROJ_DLL const common::Measure &
-    parameterValueMeasure(int epsg_code) const noexcept;
+    parameterValueMeasure(const std::string &paramName, int epsg_code = 0) const
+        noexcept;
+
+    PROJ_DLL const common::Measure &parameterValueMeasure(int epsg_code) const
+        noexcept;
 
     PROJ_DLL static SingleOperationNNPtr createPROJBased(
         const util::PropertyMap &properties, const std::string &PROJString,
@@ -612,16 +612,17 @@ class PROJ_GCC_DLL SingleOperation : virtual public CoordinateOperation {
         //! @cond Doxygen_Suppress
 
         PROJ_DLL double
-        parameterValueNumeric(
-            int epsg_code,
-            const common::UnitOfMeasure &targetUnit) const noexcept;
-
-    PROJ_INTERNAL double parameterValueNumeric(
-        const char *param_name,
-        const common::UnitOfMeasure &targetUnit) const noexcept;
+        parameterValueNumeric(int epsg_code,
+                              const common::UnitOfMeasure &targetUnit) const
+        noexcept;
 
     PROJ_INTERNAL double
-    parameterValueNumericAsSI(int epsg_code) const noexcept;
+    parameterValueNumeric(const char *param_name,
+                          const common::UnitOfMeasure &targetUnit) const
+        noexcept;
+
+    PROJ_INTERNAL double parameterValueNumericAsSI(int epsg_code) const
+        noexcept;
 
     PROJ_INTERNAL bool _isEquivalentTo(
         const util::IComparable *other,
@@ -740,7 +741,7 @@ projection grid at the natural origin.
 
 EPSG:8807
 
-\subsection latitude_projection_centre Latitude of projection centre
+\subsection latitude_projection_centre Latitute of projection centre
 
 For an oblique projection, this is the latitude of the point at which the
 azimuth of the central line is defined.
@@ -1345,9 +1346,6 @@ class PROJ_GCC_DLL Conversion : public SingleOperation {
                              const common::Scale &factor);
 
     PROJ_DLL static ConversionNNPtr
-    createChangeVerticalUnit(const util::PropertyMap &properties);
-
-    PROJ_DLL static ConversionNNPtr
     createHeightDepthReversal(const util::PropertyMap &properties);
 
     PROJ_DLL static ConversionNNPtr createAxisOrderReversal(bool is3D);
@@ -1595,14 +1593,6 @@ class PROJ_GCC_DLL Transformation : public SingleOperation {
 
     PROJ_INTERNAL TransformationNNPtr shallowClone() const;
 
-    PROJ_INTERNAL TransformationNNPtr
-    promoteTo3D(const std::string &newName,
-                const io::DatabaseContextPtr &dbContext) const;
-
-    PROJ_INTERNAL TransformationNNPtr
-    demoteTo2D(const std::string &newName,
-               const io::DatabaseContextPtr &dbContext) const;
-
     //! @endcond
 
   protected:
@@ -1769,10 +1759,6 @@ class PROJ_GCC_DLL CoordinateOperationContext {
 
     PROJ_DLL void setDesiredAccuracy(double accuracy);
 
-    PROJ_DLL void setAllowBallparkTransformations(bool allow);
-
-    PROJ_DLL bool getAllowBallparkTransformations() const;
-
     /** Specify how source and target CRS extent should be used to restrict
      * candidate operations (only taken into account if no explicit area of
      * interest is specified. */
@@ -1830,9 +1816,9 @@ class PROJ_GCC_DLL CoordinateOperationContext {
         IGNORE_GRID_AVAILABILITY,
 
         /** Results will be presented as if grids known to PROJ (that is
-         * registered in the grid_alternatives table of its database) were
-         * available. Used typically when networking is enabled.
-         */
+        * registered in the grid_alternatives table of its database) were
+        * available. Used typically when networking is enabled.
+        */
         KNOWN_AVAILABLE,
     };
 

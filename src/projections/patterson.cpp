@@ -76,7 +76,7 @@ static PJ_XY patterson_s_forward (PJ_LP lp, PJ *P) {           /* Spheroidal, fo
 
 static PJ_LP patterson_s_inverse (PJ_XY xy, PJ *P) {           /* Spheroidal, inverse */
     PJ_LP lp = {0.0,0.0};
-    double yc;
+    double yc, tol, y2, f, fder;
     int i;
     (void) P;
 
@@ -90,17 +90,16 @@ static PJ_LP patterson_s_inverse (PJ_XY xy, PJ *P) {           /* Spheroidal, in
     }
 
     for (i = MAX_ITER; i ; --i) { /* Newton-Raphson */
-        const double y2 = yc * yc;
-        const double f = (yc * (K1 + y2 * y2 * (K2 + y2 * (K3 + K4 * y2)))) - xy.y;
-        const double fder = C1 + y2 * y2 * (C2 + y2 * (C3 + C4 * y2));
-        const double tol = f / fder;
-        yc -= tol;
+        y2 = yc * yc;
+        f = (yc * (K1 + y2 * y2 * (K2 + y2 * (K3 + K4 * y2)))) - xy.y;
+        fder = C1 + y2 * y2 * (C2 + y2 * (C3 + C4 * y2));
+        yc -= tol = f / fder;
         if (fabs(tol) < EPS11) {
             break;
         }
     }
     if( i == 0 )
-        proj_context_errno_set( P->ctx, PROJ_ERR_COORD_TRANSFM_OUTSIDE_PROJECTION_DOMAIN );
+        pj_ctx_set_errno( P->ctx, PJD_ERR_NON_CONVERGENT );
     lp.phi = yc;
 
     /* longitude */

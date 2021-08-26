@@ -576,7 +576,7 @@ OPTARGS *opt_parse (int argc, char **argv, const char *flags, const char *keys, 
                 continue;
             }
 
-            /* options taking arguments */
+            /* options taking argumants */
 
             /* argument separate (i.e. "-i 10") */
             if (j + 1==arg_group_size) {

@@ -38,8 +38,6 @@
 #include "proj/internal/internal.hpp"
 #include "proj/internal/io_internal.hpp"
 
-#include "proj_json_streaming_writer.hpp"
-
 #include <algorithm>
 #include <memory>
 #include <string>
@@ -777,7 +775,7 @@ bool Extent::_isEquivalentTo(const util::IComparable *other,
 
 /** \brief Returns whether this extent contains the other one.
  *
- * Behavior only well specified if each sub-extent category as at most
+ * Behaviour only well specified if each sub-extent category as at most
  * one element.
  */
 bool Extent::contains(const ExtentNNPtr &other) const {
@@ -802,7 +800,7 @@ bool Extent::contains(const ExtentNNPtr &other) const {
 
 /** \brief Returns whether this extent intersects the other one.
  *
- * Behavior only well specified if each sub-extent category as at most
+ * Behaviour only well specified if each sub-extent category as at most
  * one element.
  */
 bool Extent::intersects(const ExtentNNPtr &other) const {
@@ -829,7 +827,7 @@ bool Extent::intersects(const ExtentNNPtr &other) const {
 
 /** \brief Returns the intersection of this extent with another one.
  *
- * Behavior only well specified if there is one single GeographicExtent
+ * Behaviour only well specified if there is one single GeographicExtent
  * in each object.
  * Returns nullptr otherwise.
  */
@@ -1104,15 +1102,15 @@ void Identifier::_exportToJSON(JSONFormatter *formatter) const {
     const std::string &l_code = code();
     const std::string &l_codeSpace = *codeSpace();
     if (!l_codeSpace.empty() && !l_code.empty()) {
-        auto writer = formatter->writer();
+        auto &writer = formatter->writer();
         auto objContext(formatter->MakeObjectContext(nullptr, false));
-        writer->AddObjKey("authority");
-        writer->Add(l_codeSpace);
-        writer->AddObjKey("code");
+        writer.AddObjKey("authority");
+        writer.Add(l_codeSpace);
+        writer.AddObjKey("code");
         try {
-            writer->Add(std::stoi(l_code));
+            writer.Add(std::stoi(l_code));
         } catch (const std::exception &) {
-            writer->Add(l_code);
+            writer.Add(l_code);
         }
     }
 }
@@ -1124,7 +1122,7 @@ void Identifier::_exportToJSON(JSONFormatter *formatter) const {
 //! @cond Doxygen_Suppress
 static bool isIgnoredChar(char ch) {
     return ch == ' ' || ch == '_' || ch == '-' || ch == '/' || ch == '(' ||
-           ch == ')' || ch == '.' || ch == '&' || ch == ',';
+           ch == ')' || ch == '.' || ch == '&';
 }
 //! @endcond
 
