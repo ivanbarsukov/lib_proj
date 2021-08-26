@@ -6,15 +6,15 @@ data/tests,data/tests,,"gsb,tif,gtx,ct2"
 include,include,,"h,hpp"
 include/proj,include/proj,,"h,hpp"
 include/proj/internal,include/proj/internal,,"h,hpp"
-include/proj/internal/nlohmann,include/proj/internal/nlohmann,,"h,hpp"
+include/proj/internal/vendor/nlohmann,include/proj/internal/vendor/nlohmann,,"h,hpp"
 jniwrap,jniwrap,skip,
 m4,m4,skip,
 man/man1,man/man1,,1
-man/man3,man/man3,,3
 src,src,,"c,cpp,h,hpp"
 src/apps,src/apps,,"c,cpp,h,hpp"
 src/conversions,src/conversions,,"c,cpp,h,hpp"
 src/iso19111,src/iso19111,,"c,cpp,h,hpp"
+src/iso19111/operation,src/iso19111/operation,,"c,cpp,h,hpp"
 src/projections,src/projections,,"c,cpp,h,hpp"
 src/tests,src/tests,,"c,cpp,h,hpp"
 src/transformations,src/transformations,,"c,cpp,h,hpp"

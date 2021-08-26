@@ -23,57 +23,56 @@ struct pj_opaque {
 static PJ_XY sts_s_forward (PJ_LP lp, PJ *P) {           /* Spheroidal, forward */
     PJ_XY xy = {0.0,0.0};
     struct pj_opaque *Q = static_cast<struct pj_opaque*>(P->opaque);
-	double c;
 
-	xy.x = Q->C_x * lp.lam * cos(lp.phi);
-	xy.y = Q->C_y;
-	lp.phi *= Q->C_p;
-	c = cos(lp.phi);
-	if (Q->tan_mode) {
-		xy.x *= c * c;
-		xy.y *= tan (lp.phi);
-	} else {
-		xy.x /= c;
-		xy.y *= sin (lp.phi);
-	}
-	return xy;
+    xy.x = Q->C_x * lp.lam * cos(lp.phi);
+    xy.y = Q->C_y;
+    lp.phi *= Q->C_p;
+    const double c = cos(lp.phi);
+    if (Q->tan_mode) {
+            xy.x *= c * c;
+            xy.y *= tan (lp.phi);
+    } else {
+            xy.x /= c;
+            xy.y *= sin (lp.phi);
+    }
+    return xy;
 }
 
 
 static PJ_LP sts_s_inverse (PJ_XY xy, PJ *P) {           /* Spheroidal, inverse */
     PJ_LP lp = {0.0,0.0};
     struct pj_opaque *Q = static_cast<struct pj_opaque*>(P->opaque);
-	double c;
 
-	xy.y /= Q->C_y;
-	c = cos (lp.phi = Q->tan_mode ? atan (xy.y) : aasin (P->ctx, xy.y));
-	lp.phi /= Q->C_p;
-	lp.lam = xy.x / (Q->C_x * cos(lp.phi));
-	if (Q->tan_mode)
-		lp.lam /= c * c;
-	else
-		lp.lam *= c;
-	return lp;
+    xy.y /= Q->C_y;
+    lp.phi = Q->tan_mode ? atan (xy.y) : aasin (P->ctx, xy.y);
+    const double c = cos (lp.phi);
+    lp.phi /= Q->C_p;
+    lp.lam = xy.x / (Q->C_x * cos(lp.phi));
+    if (Q->tan_mode)
+            lp.lam /= c * c;
+    else
+            lp.lam *= c;
+    return lp;
 }
 
 
 static PJ *setup(PJ *P, double p, double q, int mode) {
-	P->es  = 0.;
-	P->inv = sts_s_inverse;
-	P->fwd = sts_s_forward;
-	static_cast<struct pj_opaque*>(P->opaque)->C_x = q / p;
-	static_cast<struct pj_opaque*>(P->opaque)->C_y = p;
-	static_cast<struct pj_opaque*>(P->opaque)->C_p = 1/ q;
-	static_cast<struct pj_opaque*>(P->opaque)->tan_mode = mode;
-	return P;
+    P->es  = 0.;
+    P->inv = sts_s_inverse;
+    P->fwd = sts_s_forward;
+    static_cast<struct pj_opaque*>(P->opaque)->C_x = q / p;
+    static_cast<struct pj_opaque*>(P->opaque)->C_y = p;
+    static_cast<struct pj_opaque*>(P->opaque)->C_p = 1/ q;
+    static_cast<struct pj_opaque*>(P->opaque)->tan_mode = mode;
+    return P;
 }
 
 
 
 PJ *PROJECTION(fouc) {
-    struct pj_opaque *Q = static_cast<struct pj_opaque*>(pj_calloc (1, sizeof (struct pj_opaque)));
+    struct pj_opaque *Q = static_cast<struct pj_opaque*>(calloc (1, sizeof (struct pj_opaque)));
     if (nullptr==Q)
-        return pj_default_destructor(P, ENOMEM);
+        return pj_default_destructor(P, PROJ_ERR_OTHER /*ENOMEM*/);
     P->opaque = Q;
     return setup(P, 2., 2., 1);
 }
@@ -81,9 +80,9 @@ PJ *PROJECTION(fouc) {
 
 
 PJ *PROJECTION(kav5) {
-    struct pj_opaque *Q = static_cast<struct pj_opaque*>(pj_calloc (1, sizeof (struct pj_opaque)));
+    struct pj_opaque *Q = static_cast<struct pj_opaque*>(calloc (1, sizeof (struct pj_opaque)));
     if (nullptr==Q)
-        return pj_default_destructor(P, ENOMEM);
+        return pj_default_destructor(P, PROJ_ERR_OTHER /*ENOMEM*/);
     P->opaque = Q;
 
     return setup(P, 1.50488, 1.35439, 0);
@@ -92,9 +91,9 @@ PJ *PROJECTION(kav5) {
 
 
 PJ *PROJECTION(qua_aut) {
-    struct pj_opaque *Q = static_cast<struct pj_opaque*>(pj_calloc (1, sizeof (struct pj_opaque)));
+    struct pj_opaque *Q = static_cast<struct pj_opaque*>(calloc (1, sizeof (struct pj_opaque)));
     if (nullptr==Q)
-        return pj_default_destructor(P, ENOMEM);
+        return pj_default_destructor(P, PROJ_ERR_OTHER /*ENOMEM*/);
     P->opaque = Q;
     return setup(P, 2., 2., 0);
 }
@@ -102,9 +101,9 @@ PJ *PROJECTION(qua_aut) {
 
 
 PJ *PROJECTION(mbt_s) {
-    struct pj_opaque *Q = static_cast<struct pj_opaque*>(pj_calloc (1, sizeof (struct pj_opaque)));
+    struct pj_opaque *Q = static_cast<struct pj_opaque*>(calloc (1, sizeof (struct pj_opaque)));
     if (nullptr==Q)
-        return pj_default_destructor(P, ENOMEM);
+        return pj_default_destructor(P, PROJ_ERR_OTHER /*ENOMEM*/);
     P->opaque = Q;
     return setup(P, 1.48875, 1.36509, 0);
 }

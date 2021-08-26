@@ -27,8 +27,10 @@ static PJ_XY labrd_e_forward (PJ_LP lp, PJ *P) {          /* Ellipsoidal, forwar
     V2 = .5 * P->e * Q->A * log ((1. + t)/(1. - t));
     ps = 2. * (atan(exp(V1 - V2 + Q->C)) - M_FORTPI);
     I1 = ps - Q->p0s;
-    cosps = cos(ps);    cosps2 = cosps * cosps;
-    sinps = sin(ps);    sinps2 = sinps * sinps;
+    cosps = cos(ps);
+    cosps2 = cosps * cosps;
+    sinps = sin(ps);
+    sinps2 = sinps * sinps;
     I4 = Q->A * cosps;
     I2 = .5 * Q->A * I4 * sinps;
     I3 = I2 * Q->A * Q->A * (5. * cosps2 - sinps2) / 12.;
@@ -103,13 +105,14 @@ static PJ_LP labrd_e_inverse (PJ_XY xy, PJ *P) {          /* Ellipsoidal, invers
 
 PJ *PROJECTION(labrd) {
     double Az, sinp, R, N, t;
-    struct pj_opaque *Q = static_cast<struct pj_opaque*>(pj_calloc (1, sizeof (struct pj_opaque)));
+    struct pj_opaque *Q = static_cast<struct pj_opaque*>(calloc (1, sizeof (struct pj_opaque)));
     if (nullptr==Q)
-        return pj_default_destructor (P, ENOMEM);
+        return pj_default_destructor (P, PROJ_ERR_OTHER /*ENOMEM*/);
     P->opaque = Q;
 
     if (P->phi0 == 0.) {
-        return pj_default_destructor(P, PJD_ERR_LAT_0_IS_ZERO);
+        proj_log_error(P, _("Invalid value for lat_0: lat_0 should be different from 0"));
+        return pj_default_destructor(P, PROJ_ERR_INVALID_OP_ILLEGAL_ARG_VALUE);
     }
 
     Az = pj_param(P->ctx, P->params, "razi").f;
@@ -125,7 +128,8 @@ PJ *PROJECTION(labrd) {
           - Q->A * log( tan(M_FORTPI + .5 * P->phi0))
           + log( tan(M_FORTPI + .5 * Q->p0s));
     t = Az + Az;
-    Q->Ca = (1. - cos(t)) * ( Q->Cb = 1. / (12. * Q->kRg * Q->kRg) );
+    Q->Cb = 1. / (12. * Q->kRg * Q->kRg);
+    Q->Ca = (1. - cos(t)) * Q->Cb;
     Q->Cb *= sin(t);
     Q->Cc = 3. * (Q->Ca * Q->Ca - Q->Cb * Q->Cb);
     Q->Cd = 6. * Q->Ca * Q->Cb;

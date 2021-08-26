@@ -46,9 +46,8 @@ TEST(gie, cart_selftest) {
     PJ_CONTEXT *ctx;
     PJ *P;
     PJ_COORD a, b, obs[2];
-    PJ_COORD coord[2];
+    PJ_COORD coord[3];
 
-    int err;
     size_t n, sz;
     double dist, h, t;
     const char *const args[3] = {"proj=utm", "zone=32", "ellps=GRS80"};
@@ -87,16 +86,6 @@ TEST(gie, cart_selftest) {
     ASSERT_LE(dist, 2e-9);
 
     /* Clear any previous error */
-    proj_errno_reset(P);
-
-    /* Invalid projection */
-    a = proj_trans(P, static_cast<PJ_DIRECTION>(42), a);
-    ASSERT_EQ(a.lpz.lam, HUGE_VAL);
-
-    err = proj_errno(P);
-    ASSERT_NE(err, 0);
-
-    /* Clear error again */
     proj_errno_reset(P);
 
     /* Clean up */
@@ -211,7 +200,7 @@ TEST(gie, cart_selftest) {
 
     coord[0] = proj_coord(proj_torad(12), proj_torad(55), 45, 0);
     coord[1] = proj_coord(proj_torad(12), proj_torad(56), 50, 0);
-    ASSERT_FALSE(proj_trans_array(P, PJ_FWD, 2, coord));
+    ASSERT_EQ(proj_trans_array(P, PJ_FWD, 2, coord), 0);
 
     ASSERT_EQ(a.lpz.lam, coord[0].lpz.lam);
     ASSERT_EQ(a.lpz.phi, coord[0].lpz.phi);
@@ -219,6 +208,35 @@ TEST(gie, cart_selftest) {
     ASSERT_EQ(b.lpz.lam, coord[1].lpz.lam);
     ASSERT_EQ(b.lpz.phi, coord[1].lpz.phi);
     ASSERT_EQ(b.lpz.z, coord[1].lpz.z);
+
+    /* test proj_trans_array () with two failed points for the same reason */
+
+    coord[0] =
+        proj_coord(proj_torad(12), proj_torad(95), 45, 0); // invalid latitude
+    coord[1] = proj_coord(proj_torad(12), proj_torad(56), 50, 0);
+    coord[2] =
+        proj_coord(proj_torad(12), proj_torad(95), 45, 0); // invalid latitude
+    ASSERT_EQ(proj_trans_array(P, PJ_FWD, 3, coord),
+              PROJ_ERR_COORD_TRANSFM_INVALID_COORD);
+
+    ASSERT_EQ(HUGE_VAL, coord[0].lpz.lam);
+    ASSERT_EQ(HUGE_VAL, coord[0].lpz.phi);
+    ASSERT_EQ(HUGE_VAL, coord[0].lpz.z);
+    ASSERT_EQ(b.lpz.lam, coord[1].lpz.lam);
+    ASSERT_EQ(b.lpz.phi, coord[1].lpz.phi);
+    ASSERT_EQ(b.lpz.z, coord[1].lpz.z);
+    ASSERT_EQ(HUGE_VAL, coord[2].lpz.lam);
+    ASSERT_EQ(HUGE_VAL, coord[2].lpz.phi);
+    ASSERT_EQ(HUGE_VAL, coord[2].lpz.z);
+
+    /* test proj_trans_array () with two failed points for different reasons */
+
+    coord[0] =
+        proj_coord(proj_torad(12), proj_torad(95), 45, 0); // invalid latitude
+    coord[1] =
+        proj_coord(proj_torad(105), proj_torad(0), 45,
+                   0); // in the equatorial axis, at 90° of the central meridian
+    ASSERT_EQ(proj_trans_array(P, PJ_FWD, 2, coord), PROJ_ERR_COORD_TRANSFM);
 
     /* Clean up  after proj_trans_* tests */
     proj_destroy(P);
@@ -250,8 +268,10 @@ TEST_F(gieTest, proj_create_crs_to_crs) {
     ASSERT_TRUE(P != nullptr);
     PJ_COORD a, b;
 
-    a.xy.x = 700000.0;
-    a.xy.y = 6000000.0;
+    a.xyzt.x = 700000.0;
+    a.xyzt.y = 6000000.0;
+    a.xyzt.z = 0;
+    a.xyzt.t = HUGE_VAL;
     b.xy.x = 307788.8761171057;
     b.xy.y = 5999669.3036037628;
 
@@ -288,8 +308,10 @@ TEST_F(gieTest, proj_create_crs_to_crs_EPSG_4326) {
     PJ_COORD a, b;
 
     // Lat, long degrees
-    a.xy.x = 0.0;
-    a.xy.y = 3.0;
+    a.xyzt.x = 0.0;
+    a.xyzt.y = 3.0;
+    a.xyzt.z = 0;
+    a.xyzt.t = HUGE_VAL;
 
     b.xy.x = 500000.0;
     b.xy.y = 0.0;
@@ -310,8 +332,10 @@ TEST_F(gieTest, proj_create_crs_to_crs_proj_longlat) {
     PJ_COORD a, b;
 
     // Long, lat degrees
-    a.xy.x = 3.0;
-    a.xy.y = 0;
+    a.xyzt.x = 3.0;
+    a.xyzt.y = 0;
+    a.xyzt.z = 0;
+    a.xyzt.t = HUGE_VAL;
 
     b.xy.x = 500000.0;
     b.xy.y = 0.0;
@@ -334,7 +358,6 @@ TEST(gie, info_functions) {
 
     const PJ_OPERATIONS *oper_list;
     const PJ_ELLPS *ellps_list;
-    const PJ_UNITS *unit_list;
     const PJ_PRIME_MERIDIANS *pm_list;
 
     char buf[40];
@@ -453,11 +476,6 @@ TEST(gie, info_functions) {
     ASSERT_NE(n, 0U);
 
     n = 0;
-    for (unit_list = proj_list_units(); unit_list->id; ++unit_list)
-        n++;
-    ASSERT_NE(n, 0U);
-
-    n = 0;
     for (pm_list = proj_list_prime_meridians(); pm_list->id; ++pm_list)
         n++;
     ASSERT_NE(n, 0U);
@@ -554,7 +572,7 @@ static void test_time(const char *args, double tol, double t_in, double t_exp) {
     out = proj_trans(P, PJ_INV, out);
     EXPECT_NEAR(out.xyzt.t, t_in, tol);
 
-    pj_free(P);
+    proj_destroy(P);
 
     proj_log_level(NULL, PJ_LOG_NONE);
 }
@@ -706,9 +724,10 @@ TEST(gie, proj_create_crs_to_crs_PULKOVO42_ETRS89) {
     proj_destroy(target_crs);
 
     // Romania
-    c.xyz.x = 45; // Lat
-    c.xyz.y = 25; // Long
-    c.xyz.z = 0;
+    c.xyzt.x = 45; // Lat
+    c.xyzt.y = 25; // Long
+    c.xyzt.z = 0;
+    c.xyzt.t = HUGE_VAL;
     c = proj_trans(P, PJ_FWD, c);
     EXPECT_NEAR(c.xy.x, 44.999701238, 1e-9);
     EXPECT_NEAR(c.xy.y, 24.998474948, 1e-9);
@@ -728,9 +747,10 @@ TEST(gie, proj_create_crs_to_crs_PULKOVO42_ETRS89) {
     EXPECT_NEAR(c.xy.x, 45, 1e-8);
     EXPECT_NEAR(c.xy.y, 25, 1e-8);
 
-    c.xyz.x = 45; // Lat
-    c.xyz.y = 25; // Long
-    c.xyz.z = 0;
+    c.xyzt.x = 45; // Lat
+    c.xyzt.y = 25; // Long
+    c.xyzt.z = 0;
+    c.xyzt.t = HUGE_VAL;
     proj_trans_generic(P, PJ_FWD, &(c.xyz.x), sizeof(double), 1, &(c.xyz.y),
                        sizeof(double), 1, &(c.xyz.z), sizeof(double), 1,
                        nullptr, 0, 0);
@@ -771,12 +791,37 @@ TEST(gie, proj_create_crs_to_crs_outside_area_of_use) {
     EXPECT_EQ(P->fwd, nullptr);
 
     // Test point outside area of use of both candidate coordinate operations
-    c.xyz.x = 58; // Lat in deg
-    c.xyz.y = 5;  // Long in deg
-    c.xyz.z = 0;
+    c.xyzt.x = 58; // Lat in deg
+    c.xyzt.y = 5;  // Long in deg
+    c.xyzt.z = 0;
+    c.xyzt.t = HUGE_VAL;
     c = proj_trans(P, PJ_FWD, c);
     EXPECT_NEAR(c.xy.x, 64.44444444444444, 1e-9); // Lat in grad
     EXPECT_NEAR(c.xy.y, 2.958634259259258, 1e-9); // Long in grad
+
+    proj_destroy(P);
+}
+
+// ---------------------------------------------------------------------------
+
+TEST(gie, proj_create_crs_to_crs_with_area_large) {
+
+    // Test bugfix for https://github.com/OSGeo/gdal/issues/3695
+    auto area = proj_area_create();
+    proj_area_set_bbox(area, -14.1324, 49.5614, 3.76488, 62.1463);
+    auto P =
+        proj_create_crs_to_crs(PJ_DEFAULT_CTX, "EPSG:4277", "EPSG:4326", area);
+    proj_area_destroy(area);
+    ASSERT_TRUE(P != nullptr);
+    PJ_COORD c;
+
+    c.xyzt.x = 50; // Lat in deg
+    c.xyzt.y = -2; // Long in deg
+    c.xyzt.z = 0;
+    c.xyzt.t = HUGE_VAL;
+    c = proj_trans(P, PJ_FWD, c);
+    EXPECT_NEAR(c.xy.x, 50.00065628, 1e-8);
+    EXPECT_NEAR(c.xy.y, -2.00133989, 1e-8);
 
     proj_destroy(P);
 }

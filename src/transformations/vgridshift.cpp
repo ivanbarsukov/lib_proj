@@ -6,9 +6,13 @@
 #include <time.h>
 
 #include "proj_internal.h"
+#include "proj/internal/mutex.hpp"
 #include "grids.hpp"
 
 PROJ_HEAD(vgridshift, "Vertical grid shift");
+
+static NS_PROJ::mutex gMutex{};
+static std::set<std::string> gKnownGrids{};
 
 using namespace NS_PROJ;
 
@@ -25,7 +29,7 @@ struct vgridshiftData {
 static void deal_with_vertcon_gtx_hack(PJ *P)
 {
     struct vgridshiftData *Q = (struct vgridshiftData *) P->opaque;
-    // The .gtx VERTCON files stored millimetres, but the .tif files
+    // The .gtx VERTCON files stored millimeters, but the .tif files
     // are in metres.
     if( Q->forward_multiplier != 0.001 ) {
         return;
@@ -158,8 +162,8 @@ PJ *TRANSFORMATION(vgridshift,0) {
     P->reassign_context = reassign_context;
 
    if (!pj_param(P->ctx, P->params, "tgrids").i) {
-        proj_log_error(P, "vgridshift: +grids parameter missing.");
-        return destructor(P, PJD_ERR_NO_ARGS);
+        proj_log_error(P, _("+grids parameter missing."));
+        return destructor (P, PROJ_ERR_INVALID_OP_MISSING_ARG);
     }
 
    /* TODO: Refactor into shared function that can be used  */
@@ -192,13 +196,27 @@ PJ *TRANSFORMATION(vgridshift,0) {
         Q->defer_grid_opening = true;
     }
     else {
-        /* Build gridlist. P->vgridlist_geoid can be empty if +grids only ask for optional grids. */
-        Q->grids = pj_vgrid_init(P, "grids");
+        const char *gridnames = pj_param(P->ctx, P->params, "sgrids").s;
+        gMutex.lock();
+        const bool isKnownGrid = gKnownGrids.find(gridnames) != gKnownGrids.end();
+        gMutex.unlock();
 
-        /* Was gridlist compiled properly? */
-        if ( proj_errno(P) ) {
-            proj_log_error(P, "vgridshift: could not find required grid(s).");
-            return destructor(P, PJD_ERR_FAILED_TO_LOAD_GRID);
+        if( isKnownGrid ) {
+            Q->defer_grid_opening = true;
+        }
+        else {
+            /* Build gridlist. P->vgridlist_geoid can be empty if +grids only ask for optional grids. */
+            Q->grids = pj_vgrid_init(P, "grids");
+
+            /* Was gridlist compiled properly? */
+            if ( proj_errno(P) ) {
+                proj_log_error(P, _("could not find required grid(s)."));
+                return destructor(P, PROJ_ERR_INVALID_OP_FILE_NOT_FOUND_OR_INVALID);
+            }
+
+            gMutex.lock();
+            gKnownGrids.insert(gridnames);
+            gMutex.unlock();
         }
     }
 
@@ -213,4 +231,9 @@ PJ *TRANSFORMATION(vgridshift,0) {
     P->right = PJ_IO_UNITS_RADIANS;
 
     return P;
+}
+
+void pj_clear_vgridshift_knowngrids_cache() {
+    NS_PROJ::lock_guard<NS_PROJ::mutex> lock(gMutex);
+    gKnownGrids.clear();
 }

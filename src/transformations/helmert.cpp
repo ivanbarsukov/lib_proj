@@ -53,7 +53,6 @@ Last update: 2018-10-26
 #include <math.h>
 
 #include "proj_internal.h"
-#include "geocent.h"
 
 PROJ_HEAD(helmert, "3(6)-, 4(8)- and 7(14)-parameter Helmert shift");
 PROJ_HEAD(molobadekas, "Molodensky-Badekas transformation");
@@ -374,7 +373,7 @@ static PJ_XYZ helmert_forward_3d (PJ_LPZ lpz, PJ *P) {
         return point.xyz;
     }
 
-    if (Q->no_rotation) {
+    if (Q->no_rotation && Q->scale == 0) {
         point.xyz.x = lpz.lam + Q->xyz.x;
         point.xyz.y = lpz.phi + Q->xyz.y;
         point.xyz.z = lpz.z   + Q->xyz.z;
@@ -414,7 +413,7 @@ static PJ_LPZ helmert_reverse_3d (PJ_XYZ xyz, PJ *P) {
         return point.lpz;
     }
 
-    if (Q->no_rotation) {
+    if (Q->no_rotation && Q->scale == 0) {
         point.xyz.x  =  xyz.x - Q->xyz.x;
         point.xyz.y  =  xyz.y - Q->xyz.y;
         point.xyz.z  =  xyz.z - Q->xyz.z;
@@ -477,9 +476,9 @@ static PJ_COORD helmert_reverse_4d (PJ_COORD point, PJ *P) {
 
 
 static PJ* init_helmert_six_parameters(PJ* P) {
-    struct pj_opaque_helmert *Q = static_cast<struct pj_opaque_helmert*>(pj_calloc (1, sizeof (struct pj_opaque_helmert)));
+    struct pj_opaque_helmert *Q = static_cast<struct pj_opaque_helmert*>(calloc (1, sizeof (struct pj_opaque_helmert)));
     if (nullptr==Q)
-        return pj_default_destructor (P, ENOMEM);
+        return pj_default_destructor (P, PROJ_ERR_OTHER /*ENOMEM*/);
     P->opaque = (void *) Q;
 
     /* In most cases, we work on 3D cartesian coordinates */
@@ -523,8 +522,8 @@ static PJ* read_convention(PJ* P) {
     if (!Q->no_rotation) {
         const char* convention = pj_param (P->ctx, P->params, "sconvention").s;
         if( !convention ) {
-            proj_log_error (P, "helmert: missing 'convention' argument");
-            return pj_default_destructor (P, PJD_ERR_MISSING_ARGS);
+            proj_log_error (P, _("helmert: missing 'convention' argument"));
+            return pj_default_destructor (P, PROJ_ERR_INVALID_OP_MISSING_ARG);
         }
         if( strcmp(convention, "position_vector") == 0 ) {
             Q->is_position_vector = 1;
@@ -533,17 +532,17 @@ static PJ* read_convention(PJ* P) {
             Q->is_position_vector = 0;
         }
         else {
-            proj_log_error (P, "helmert: invalid value for 'convention' argument");
-            return pj_default_destructor (P, PJD_ERR_INVALID_ARG);
+            proj_log_error (P, _("helmert: invalid value for 'convention' argument"));
+            return pj_default_destructor (P, PROJ_ERR_INVALID_OP_ILLEGAL_ARG_VALUE);
         }
 
         /* historically towgs84 in PROJ has always been using position_vector
          * convention. Accepting coordinate_frame would be confusing. */
         if (pj_param_exists (P->params, "towgs84")) {
             if( !Q->is_position_vector ) {
-                proj_log_error (P, "helmert: towgs84 should only be used with "
-                                "convention=position_vector");
-                return pj_default_destructor (P, PJD_ERR_INVALID_ARG);
+                proj_log_error (P, _("helmert: towgs84 should only be used with "
+                                "convention=position_vector"));
+                return pj_default_destructor (P, PROJ_ERR_INVALID_OP_ILLEGAL_ARG_VALUE);
             }
         }
     }
@@ -579,9 +578,9 @@ PJ *TRANSFORMATION(helmert, 0) {
 
     /* Detect obsolete transpose flag and error out if found */
     if (pj_param (P->ctx, P->params, "ttranspose").i) {
-        proj_log_error (P, "helmert: 'transpose' argument is no longer valid. "
-                        "Use convention=position_vector/coordinate_frame");
-        return pj_default_destructor (P, PJD_ERR_INVALID_ARG);
+        proj_log_error (P, _("helmert: 'transpose' argument is no longer valid. "
+                        "Use convention=position_vector/coordinate_frame"));
+        return pj_default_destructor (P, PROJ_ERR_INVALID_OP_ILLEGAL_ARG_VALUE);
     }
 
     /* Support the classic PROJ towgs84 parameter, but allow later overrides.*/
@@ -613,9 +612,15 @@ PJ *TRANSFORMATION(helmert, 0) {
     if (pj_param (P->ctx, P->params, "ts").i) {
         Q->scale_0 = pj_param (P->ctx, P->params, "ds").f;
         if( Q->scale_0 <= -1.0e6 )
-            return pj_default_destructor (P, PJD_ERR_INVALID_SCALE);
+        {
+            proj_log_error (P, _("helmert: invalid value for s."));
+            return pj_default_destructor (P, PROJ_ERR_INVALID_OP_ILLEGAL_ARG_VALUE);
+        }
         if (pj_param (P->ctx, P->params, "ttheta").i && Q->scale_0 == 0.0)
-            return pj_default_destructor (P, PJD_ERR_INVALID_SCALE);
+        {
+            proj_log_error (P, _("helmert: invalid value for s."));
+            return pj_default_destructor (P, PROJ_ERR_INVALID_OP_ILLEGAL_ARG_VALUE);
+        }
     }
 
     /* Translation rates */
@@ -655,7 +660,7 @@ PJ *TRANSFORMATION(helmert, 0) {
     Q->scale  =  Q->scale_0;
     Q->theta  =  Q->theta_0;
 
-    if ((Q->opk.o==0)  && (Q->opk.p==0)  && (Q->opk.k==0) && (Q->scale==0) &&
+    if ((Q->opk.o==0)  && (Q->opk.p==0)  && (Q->opk.k==0) &&
         (Q->dopk.o==0) && (Q->dopk.p==0) && (Q->dopk.k==0)) {
         Q->no_rotation = 1;
     }
@@ -677,10 +682,6 @@ PJ *TRANSFORMATION(helmert, 0) {
         proj_log_trace(P, "dx= %8.5f  dy= %8.5f  dz= %8.5f",   Q->dxyz.x, Q->dxyz.y, Q->dxyz.z);
         proj_log_trace(P, "drx=%8.5f  dry=%8.5f  drz=%8.5f",   Q->dopk.o, Q->dopk.p, Q->dopk.k);
         proj_log_trace(P, "ds= %8.5f  t_epoch=%8.5f", Q->dscale, Q->t_epoch);
-    }
-
-    if (Q->no_rotation) {
-        return P;
     }
 
     update_parameters(P);
