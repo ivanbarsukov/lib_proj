@@ -43,52 +43,6 @@ NS_PROJ_START
 
 namespace operation {
 
-struct ParamMapping {
-    const char *wkt2_name;
-    const int epsg_code;
-    const char *wkt1_name;
-    const common::UnitOfMeasure::Type unit_type;
-    const char *proj_name;
-};
-
-struct MethodMapping {
-    const char *wkt2_name;
-    const int epsg_code;
-    const char *wkt1_name;
-    const char *proj_name_main;
-    const char *proj_name_aux;
-    const ParamMapping *const *params;
-};
-
-const MethodMapping *getMapping(int epsg_code) noexcept;
-const MethodMapping *getMappingFromWKT1(const std::string &wkt1_name) noexcept;
-const MethodMapping *getMapping(const char *wkt2_name) noexcept;
-const MethodMapping *getMapping(const OperationMethod *method) noexcept;
-std::vector<const MethodMapping *>
-getMappingsFromPROJName(const std::string &projName);
-const ParamMapping *getMappingFromWKT1(const MethodMapping *mapping,
-                                       const std::string &wkt1_name);
-bool areEquivalentParameters(const std::string &a, const std::string &b);
-
-// ---------------------------------------------------------------------------
-
-struct ESRIParamMapping {
-    const char *esri_name;
-    const char *wkt2_name;
-    int epsg_code;
-    float fixed_value;
-};
-
-struct ESRIMethodMapping {
-    const char *esri_name;
-    const char *wkt2_name;
-    int epsg_code;
-    const ESRIParamMapping *const params;
-};
-
-std::vector<const ESRIMethodMapping *>
-getMappingsFromESRI(const std::string &esri_name);
-
 // ---------------------------------------------------------------------------
 
 bool isAxisOrderReversal(int methodEPSGCode);
@@ -274,6 +228,7 @@ class PROJBasedOperation : public SingleOperation {
     create(const util::PropertyMap &properties,
            const io::IPROJStringExportableNNPtr &projExportable, bool inverse,
            const crs::CRSNNPtr &sourceCRS, const crs::CRSNNPtr &targetCRS,
+           const crs::CRSPtr &interpolationCRS,
            const std::vector<metadata::PositionalAccuracyNNPtr> &accuracies,
            bool hasRoughTransformation);
 
@@ -301,6 +256,15 @@ class PROJBasedOperation : public SingleOperation {
     bool inverse_ = false;
 };
 
+// ---------------------------------------------------------------------------
+
+class InvalidOperationEmptyIntersection : public InvalidOperation {
+  public:
+    explicit InvalidOperationEmptyIntersection(const std::string &message);
+    InvalidOperationEmptyIntersection(
+        const InvalidOperationEmptyIntersection &other);
+    ~InvalidOperationEmptyIntersection() override;
+};
 } // namespace operation
 
 NS_PROJ_END

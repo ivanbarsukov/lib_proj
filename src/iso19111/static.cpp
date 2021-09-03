@@ -39,6 +39,7 @@
 #include "proj/metadata.hpp"
 #include "proj/util.hpp"
 
+#include "operation/oputils.hpp"
 #include "proj/internal/coordinatesystem_internal.hpp"
 #include "proj/internal/io_internal.hpp"
 
@@ -204,6 +205,7 @@ DEFINE_WKT_CONSTANT(PROJCS);
 DEFINE_WKT_CONSTANT(PROJECTION);
 DEFINE_WKT_CONSTANT(PARAMETER);
 DEFINE_WKT_CONSTANT(VERT_CS);
+DEFINE_WKT_CONSTANT(VERTCS);
 DEFINE_WKT_CONSTANT(VERT_DATUM);
 DEFINE_WKT_CONSTANT(COMPD_CS);
 DEFINE_WKT_CONSTANT(TOWGS84);
@@ -651,6 +653,17 @@ const GeographicCRSNNPtr
  */
 const std::string
     operation::CoordinateOperation::OPERATION_VERSION_KEY("operationVersion");
+
+//! @cond Doxygen_Suppress
+const common::Measure operation::nullMeasure{};
+
+const std::string operation::INVERSE_OF = "Inverse of ";
+
+const std::string operation::AXIS_ORDER_CHANGE_2D_NAME =
+    "axis order change (2D)";
+const std::string operation::AXIS_ORDER_CHANGE_3D_NAME =
+    "axis order change (geographic3D horizontal)";
+//! @endcond
 
 // ---------------------------------------------------------------------------
 

@@ -46,6 +46,8 @@
 #include "proj_api.h"
 // clang-format on
 
+#include "proj_json_streaming_writer.hpp"
+
 #include <cmath>
 #include <cstdlib>
 #include <memory>
@@ -113,9 +115,9 @@ void Datum::Private::exportAnchorDefinition(io::WKTFormatter *formatter) const {
 void Datum::Private::exportAnchorDefinition(
     io::JSONFormatter *formatter) const {
     if (anchorDefinition) {
-        auto &writer = formatter->writer();
-        writer.AddObjKey("anchor");
-        writer.Add(*anchorDefinition);
+        auto writer = formatter->writer();
+        writer->AddObjKey("anchor");
+        writer->Add(*anchorDefinition);
     }
 }
 
@@ -203,10 +205,10 @@ void Datum::setAnchor(const util::optional<std::string> &anchor) {
 void Datum::setProperties(
     const util::PropertyMap &properties) // throw(InvalidValueTypeException)
 {
-    std::string publicationDate;
-    properties.getStringValue("PUBLICATION_DATE", publicationDate);
-    if (!publicationDate.empty()) {
-        d->publicationDate = common::DateTime::create(publicationDate);
+    std::string publicationDateResult;
+    properties.getStringValue("PUBLICATION_DATE", publicationDateResult);
+    if (!publicationDateResult.empty()) {
+        d->publicationDate = common::DateTime::create(publicationDateResult);
     }
     ObjectUsage::setProperties(properties);
 }
@@ -350,6 +352,23 @@ void PrimeMeridian::_exportToWKT(
     if (!(isWKT2 && formatter->primeMeridianOmittedIfGreenwich() &&
           l_name == "Greenwich")) {
         formatter->startNode(io::WKTConstants::PRIMEM, !identifiers().empty());
+
+        if (formatter->useESRIDialect()) {
+            bool aliasFound = false;
+            const auto &dbContext = formatter->databaseContext();
+            if (dbContext) {
+                auto l_alias = dbContext->getAliasFromOfficialName(
+                    l_name, "prime_meridian", "ESRI");
+                if (!l_alias.empty()) {
+                    l_name = l_alias;
+                    aliasFound = true;
+                }
+            }
+            if (!aliasFound) {
+                l_name = io::WKTFormatter::morphNameToESRI(l_name);
+            }
+        }
+
         formatter->addQuotedString(l_name);
         const auto &l_long = longitude();
         if (formatter->primeMeridianInDegree()) {
@@ -381,25 +400,25 @@ void PrimeMeridian::_exportToWKT(
 void PrimeMeridian::_exportToJSON(
     io::JSONFormatter *formatter) const // throw(FormattingException)
 {
-    auto &writer = formatter->writer();
+    auto writer = formatter->writer();
     auto objectContext(
         formatter->MakeObjectContext("PrimeMeridian", !identifiers().empty()));
 
-    writer.AddObjKey("name");
+    writer->AddObjKey("name");
     std::string l_name =
         name()->description().has_value() ? nameStr() : "Greenwich";
-    writer.Add(l_name);
+    writer->Add(l_name);
 
     const auto &l_long = longitude();
-    writer.AddObjKey("longitude");
+    writer->AddObjKey("longitude");
     const auto &unit = l_long.unit();
     if (unit == common::UnitOfMeasure::DEGREE) {
-        writer.Add(l_long.value(), 15);
+        writer->Add(l_long.value(), 15);
     } else {
         auto longitudeContext(formatter->MakeObjectContext(nullptr, false));
-        writer.AddObjKey("value");
-        writer.Add(l_long.value(), 15);
-        writer.AddObjKey("unit");
+        writer->AddObjKey("value");
+        writer->Add(l_long.value(), 15);
+        writer->AddObjKey("unit");
         unit._exportToJSON(formatter);
     }
 
@@ -836,49 +855,49 @@ void Ellipsoid::_exportToWKT(
 void Ellipsoid::_exportToJSON(
     io::JSONFormatter *formatter) const // throw(FormattingException)
 {
-    auto &writer = formatter->writer();
+    auto writer = formatter->writer();
     auto objectContext(
         formatter->MakeObjectContext("Ellipsoid", !identifiers().empty()));
 
-    writer.AddObjKey("name");
+    writer->AddObjKey("name");
     auto l_name = nameStr();
     if (l_name.empty()) {
-        writer.Add("unnamed");
+        writer->Add("unnamed");
     } else {
-        writer.Add(l_name);
+        writer->Add(l_name);
     }
 
     const auto &semiMajor = semiMajorAxis();
     const auto &semiMajorUnit = semiMajor.unit();
-    writer.AddObjKey(isSphere() ? "radius" : "semi_major_axis");
+    writer->AddObjKey(isSphere() ? "radius" : "semi_major_axis");
     if (semiMajorUnit == common::UnitOfMeasure::METRE) {
-        writer.Add(semiMajor.value(), 15);
+        writer->Add(semiMajor.value(), 15);
     } else {
         auto objContext(formatter->MakeObjectContext(nullptr, false));
-        writer.AddObjKey("value");
-        writer.Add(semiMajor.value(), 15);
+        writer->AddObjKey("value");
+        writer->Add(semiMajor.value(), 15);
 
-        writer.AddObjKey("unit");
+        writer->AddObjKey("unit");
         semiMajorUnit._exportToJSON(formatter);
     }
 
     if (!isSphere()) {
         const auto &l_inverseFlattening = inverseFlattening();
         if (l_inverseFlattening.has_value()) {
-            writer.AddObjKey("inverse_flattening");
-            writer.Add(l_inverseFlattening->getSIValue(), 15);
+            writer->AddObjKey("inverse_flattening");
+            writer->Add(l_inverseFlattening->getSIValue(), 15);
         } else {
-            writer.AddObjKey("semi_minor_axis");
+            writer->AddObjKey("semi_minor_axis");
             const auto &l_semiMinorAxis(semiMinorAxis());
             const auto &semiMinorAxisUnit(l_semiMinorAxis->unit());
             if (semiMinorAxisUnit == common::UnitOfMeasure::METRE) {
-                writer.Add(l_semiMinorAxis->value(), 15);
+                writer->Add(l_semiMinorAxis->value(), 15);
             } else {
                 auto objContext(formatter->MakeObjectContext(nullptr, false));
-                writer.AddObjKey("value");
-                writer.Add(l_semiMinorAxis->value(), 15);
+                writer->AddObjKey("value");
+                writer->Add(l_semiMinorAxis->value(), 15);
 
-                writer.AddObjKey("unit");
+                writer->AddObjKey("unit");
                 semiMinorAxisUnit._exportToJSON(formatter);
             }
         }
@@ -1247,7 +1266,7 @@ void GeodeticReferenceFrame::_exportToWKT(
                 if (dbContext) {
                     auto factory = io::AuthorityFactory::create(
                         NN_NO_CHECK(dbContext), std::string());
-                    // We use anonymous autority and approximate matching, so
+                    // We use anonymous authority and approximate matching, so
                     // as to trigger the caching done in createObjectsFromName()
                     // in that case.
                     auto matches = factory->createObjectsFromName(
@@ -1298,6 +1317,13 @@ void GeodeticReferenceFrame::_exportToWKT(
     }
     // the PRIMEM is exported as a child of the CRS
     formatter->endNode();
+
+    if (formatter->isAtTopLevel()) {
+        const auto &l_primeMeridian(primeMeridian());
+        if (l_primeMeridian->nameStr() != "Greenwich") {
+            l_primeMeridian->_exportToWKT(formatter);
+        }
+    }
 }
 //! @endcond
 
@@ -1312,36 +1338,36 @@ void GeodeticReferenceFrame::_exportToJSON(
     auto objectContext(formatter->MakeObjectContext(
         dynamicGRF ? "DynamicGeodeticReferenceFrame" : "GeodeticReferenceFrame",
         !identifiers().empty()));
-    auto &writer = formatter->writer();
+    auto writer = formatter->writer();
 
-    writer.AddObjKey("name");
+    writer->AddObjKey("name");
     auto l_name = nameStr();
     if (l_name.empty()) {
-        writer.Add("unnamed");
+        writer->Add("unnamed");
     } else {
-        writer.Add(l_name);
+        writer->Add(l_name);
     }
 
     Datum::getPrivate()->exportAnchorDefinition(formatter);
 
     if (dynamicGRF) {
-        writer.AddObjKey("frame_reference_epoch");
-        writer.Add(dynamicGRF->frameReferenceEpoch().value());
+        writer->AddObjKey("frame_reference_epoch");
+        writer->Add(dynamicGRF->frameReferenceEpoch().value());
 
         const auto &deformationModel = dynamicGRF->deformationModelName();
         if (deformationModel.has_value()) {
-            writer.AddObjKey("deformation_model");
-            writer.Add(*deformationModel);
+            writer->AddObjKey("deformation_model");
+            writer->Add(*deformationModel);
         }
     }
 
-    writer.AddObjKey("ellipsoid");
+    writer->AddObjKey("ellipsoid");
     formatter->setOmitTypeInImmediateChild();
     ellipsoid()->_exportToJSON(formatter);
 
     const auto &l_primeMeridian(primeMeridian());
     if (l_primeMeridian->nameStr() != "Greenwich") {
-        writer.AddObjKey("prime_meridian");
+        writer->AddObjKey("prime_meridian");
         formatter->setOmitTypeInImmediateChild();
         primeMeridian()->_exportToJSON(formatter);
     }
@@ -1376,13 +1402,13 @@ bool GeodeticReferenceFrame::hasEquivalentNameToUsingAlias(
     if (dbContext) {
         if (!identifiers().empty()) {
             const auto &id = identifiers().front();
-            auto aliases =
+            auto aliasesResult =
                 dbContext->getAliases(*(id->codeSpace()), id->code(), nameStr(),
                                       "geodetic_datum", std::string());
             const char *otherName = other->nameStr().c_str();
-            for (const auto &alias : aliases) {
-                if (metadata::Identifier::isEquivalentName(otherName,
-                                                           alias.c_str())) {
+            for (const auto &aliasResult : aliasesResult) {
+                if (metadata::Identifier::isEquivalentName(
+                        otherName, aliasResult.c_str())) {
                     return true;
                 }
             }
@@ -1395,13 +1421,13 @@ bool GeodeticReferenceFrame::hasEquivalentNameToUsingAlias(
             return false;
         }
 
-        auto aliases =
+        auto aliasesResult =
             dbContext->getAliases(std::string(), std::string(), nameStr(),
                                   "geodetic_datum", std::string());
         const char *otherName = other->nameStr().c_str();
-        for (const auto &alias : aliases) {
+        for (const auto &aliasResult : aliasesResult) {
             if (metadata::Identifier::isEquivalentName(otherName,
-                                                       alias.c_str())) {
+                                                       aliasResult.c_str())) {
                 return true;
             }
         }
@@ -1572,8 +1598,7 @@ DatumEnsemble::DatumEnsemble(const std::vector<DatumNNPtr> &datumsIn,
 
 #ifdef notdef
 DatumEnsemble::DatumEnsemble(const DatumEnsemble &other)
-    : common::IdentifiedObject(other),
-      d(internal::make_unique<Private>(*other.d)) {}
+    : common::ObjectUsage(other), d(internal::make_unique<Private>(*other.d)) {}
 #endif
 
 // ---------------------------------------------------------------------------
@@ -1612,16 +1637,83 @@ DatumEnsemble::positionalAccuracy() const {
 // ---------------------------------------------------------------------------
 
 //! @cond Doxygen_Suppress
+DatumNNPtr
+DatumEnsemble::asDatum(const io::DatabaseContextPtr &dbContext) const {
+
+    const auto &l_datums = datums();
+    auto *grf = dynamic_cast<const GeodeticReferenceFrame *>(l_datums[0].get());
+
+    const auto &l_identifiers = identifiers();
+    if (dbContext) {
+        if (!l_identifiers.empty()) {
+            const auto &id = l_identifiers[0];
+            try {
+                auto factory = io::AuthorityFactory::create(
+                    NN_NO_CHECK(dbContext), *(id->codeSpace()));
+                if (grf) {
+                    return factory->createGeodeticDatum(id->code());
+                } else {
+                    return factory->createVerticalDatum(id->code());
+                }
+            } catch (const std::exception &) {
+            }
+        }
+    }
+
+    std::string l_name(nameStr());
+    if (grf) {
+        // Remap to traditional datum names
+        if (l_name == "World Geodetic System 1984 ensemble") {
+            l_name = "World Geodetic System 1984";
+        } else if (l_name ==
+                   "European Terrestrial Reference System 1989 ensemble") {
+            l_name = "European Terrestrial Reference System 1989";
+        }
+    }
+    auto props =
+        util::PropertyMap().set(common::IdentifiedObject::NAME_KEY, l_name);
+    if (isDeprecated()) {
+        props.set(common::IdentifiedObject::DEPRECATED_KEY, true);
+    }
+    if (!l_identifiers.empty()) {
+        const auto &id = l_identifiers[0];
+        props.set(metadata::Identifier::CODESPACE_KEY, *(id->codeSpace()))
+            .set(metadata::Identifier::CODE_KEY, id->code());
+    }
+    const auto &l_usages = domains();
+    if (!l_usages.empty()) {
+
+        auto array(util::ArrayOfBaseObject::create());
+        for (const auto &usage : l_usages) {
+            array->add(usage);
+        }
+        props.set(common::ObjectUsage::OBJECT_DOMAIN_KEY,
+                  util::nn_static_pointer_cast<util::BaseObject>(array));
+    }
+    const auto anchor = util::optional<std::string>();
+
+    if (grf) {
+        return GeodeticReferenceFrame::create(props, grf->ellipsoid(), anchor,
+                                              grf->primeMeridian());
+    } else {
+        assert(dynamic_cast<VerticalReferenceFrame *>(l_datums[0].get()));
+        return datum::VerticalReferenceFrame::create(props, anchor);
+    }
+}
+//! @endcond
+
+// ---------------------------------------------------------------------------
+
+//! @cond Doxygen_Suppress
 void DatumEnsemble::_exportToWKT(
     io::WKTFormatter *formatter) const // throw(FormattingException)
 {
     const bool isWKT2 = formatter->version() == io::WKTFormatter::Version::WKT2;
     if (!isWKT2 || !formatter->use2019Keywords()) {
-        throw io::FormattingException(
-            "DatumEnsemble can only be exported to WKT2:2019");
+        return asDatum(formatter->databaseContext())->_exportToWKT(formatter);
     }
 
-    auto l_datums = datums();
+    const auto &l_datums = datums();
     assert(!l_datums.empty());
 
     formatter->startNode(io::WKTConstants::ENSEMBLE, false);
@@ -1668,28 +1760,28 @@ void DatumEnsemble::_exportToJSON(
 {
     auto objectContext(
         formatter->MakeObjectContext("DatumEnsemble", !identifiers().empty()));
-    auto &writer = formatter->writer();
+    auto writer = formatter->writer();
 
-    writer.AddObjKey("name");
+    writer->AddObjKey("name");
     auto l_name = nameStr();
     if (l_name.empty()) {
-        writer.Add("unnamed");
+        writer->Add("unnamed");
     } else {
-        writer.Add(l_name);
+        writer->Add(l_name);
     }
 
-    auto l_datums = datums();
-    writer.AddObjKey("members");
+    const auto &l_datums = datums();
+    writer->AddObjKey("members");
     {
-        auto membersContext(writer.MakeArrayContext(false));
+        auto membersContext(writer->MakeArrayContext(false));
         for (const auto &datum : l_datums) {
-            auto memberContext(writer.MakeObjectContext());
-            writer.AddObjKey("name");
+            auto memberContext(writer->MakeObjectContext());
+            writer->AddObjKey("name");
             const auto &l_datum_name = datum->nameStr();
             if (!l_datum_name.empty()) {
-                writer.Add(l_datum_name);
+                writer->Add(l_datum_name);
             } else {
-                writer.Add("unnamed");
+                writer->Add("unnamed");
             }
             datum->formatID(formatter);
         }
@@ -1698,13 +1790,13 @@ void DatumEnsemble::_exportToJSON(
     auto grfFirst = std::dynamic_pointer_cast<GeodeticReferenceFrame>(
         l_datums[0].as_nullable());
     if (grfFirst) {
-        writer.AddObjKey("ellipsoid");
+        writer->AddObjKey("ellipsoid");
         formatter->setOmitTypeInImmediateChild();
         grfFirst->ellipsoid()->_exportToJSON(formatter);
     }
 
-    writer.AddObjKey("accuracy");
-    writer.Add(positionalAccuracy()->value());
+    writer->AddObjKey("accuracy");
+    writer->Add(positionalAccuracy()->value());
 
     formatID(formatter);
 }
@@ -1771,10 +1863,6 @@ RealizationMethod::RealizationMethod(const std::string &nameIn)
 
 // ---------------------------------------------------------------------------
 
-RealizationMethod::RealizationMethod(const RealizationMethod &) = default;
-
-// ---------------------------------------------------------------------------
-
 RealizationMethod &RealizationMethod::
 operator=(const RealizationMethod &other) {
     CodeList::operator=(other);
@@ -1786,6 +1874,9 @@ operator=(const RealizationMethod &other) {
 //! @cond Doxygen_Suppress
 struct VerticalReferenceFrame::Private {
     util::optional<RealizationMethod> realizationMethod_{};
+
+    // 2005 = CS_VD_GeoidModelDerived from OGC 01-009
+    std::string wkt1DatumType_{"2005"};
 };
 //! @endcond
 
@@ -1835,8 +1926,17 @@ VerticalReferenceFrameNNPtr VerticalReferenceFrame::create(
         realizationMethodIn));
     rf->setAnchor(anchor);
     rf->setProperties(properties);
+    properties.getStringValue("VERT_DATUM_TYPE", rf->d->wkt1DatumType_);
     return rf;
 }
+
+// ---------------------------------------------------------------------------
+
+//! @cond Doxygen_Suppress
+const std::string &VerticalReferenceFrame::getWKT1DatumType() const {
+    return d->wkt1DatumType_;
+}
+//! @endcond
 
 // ---------------------------------------------------------------------------
 
@@ -1846,18 +1946,35 @@ void VerticalReferenceFrame::_exportToWKT(
 {
     const bool isWKT2 = formatter->version() == io::WKTFormatter::Version::WKT2;
     formatter->startNode(isWKT2 ? io::WKTConstants::VDATUM
-                                : io::WKTConstants::VERT_DATUM,
+                                : formatter->useESRIDialect()
+                                      ? io::WKTConstants::VDATUM
+                                      : io::WKTConstants::VERT_DATUM,
                          !identifiers().empty());
-    const auto &l_name = nameStr();
+    auto l_name = nameStr();
     if (!l_name.empty()) {
+        if (!isWKT2 && formatter->useESRIDialect()) {
+            bool aliasFound = false;
+            const auto &dbContext = formatter->databaseContext();
+            if (dbContext) {
+                auto l_alias = dbContext->getAliasFromOfficialName(
+                    l_name, "vertical_datum", "ESRI");
+                if (!l_alias.empty()) {
+                    l_name = l_alias;
+                    aliasFound = true;
+                }
+            }
+            if (!aliasFound) {
+                l_name = io::WKTFormatter::morphNameToESRI(l_name);
+            }
+        }
         formatter->addQuotedString(l_name);
     } else {
         formatter->addQuotedString("unnamed");
     }
     if (isWKT2) {
         Datum::getPrivate()->exportAnchorDefinition(formatter);
-    } else {
-        formatter->add(2005); // CS_VD_GeoidModelDerived from OGC 01-009
+    } else if (!formatter->useESRIDialect()) {
+        formatter->add(d->wkt1DatumType_);
         const auto &extension = formatter->getVDatumExtension();
         if (!extension.empty()) {
             formatter->startNode(io::WKTConstants::EXTENSION, false);
@@ -1884,26 +2001,26 @@ void VerticalReferenceFrame::_exportToJSON(
     auto objectContext(formatter->MakeObjectContext(
         dynamicGRF ? "DynamicVerticalReferenceFrame" : "VerticalReferenceFrame",
         !identifiers().empty()));
-    auto &writer = formatter->writer();
+    auto writer = formatter->writer();
 
-    writer.AddObjKey("name");
+    writer->AddObjKey("name");
     auto l_name = nameStr();
     if (l_name.empty()) {
-        writer.Add("unnamed");
+        writer->Add("unnamed");
     } else {
-        writer.Add(l_name);
+        writer->Add(l_name);
     }
 
     Datum::getPrivate()->exportAnchorDefinition(formatter);
 
     if (dynamicGRF) {
-        writer.AddObjKey("frame_reference_epoch");
-        writer.Add(dynamicGRF->frameReferenceEpoch().value());
+        writer->AddObjKey("frame_reference_epoch");
+        writer->Add(dynamicGRF->frameReferenceEpoch().value());
 
         const auto &deformationModel = dynamicGRF->deformationModelName();
         if (deformationModel.has_value()) {
-            writer.AddObjKey("deformation_model");
-            writer.Add(*deformationModel);
+            writer->AddObjKey("deformation_model");
+            writer->Add(*deformationModel);
         }
     }
 
@@ -2183,18 +2300,18 @@ void TemporalDatum::_exportToJSON(
 {
     auto objectContext(
         formatter->MakeObjectContext("TemporalDatum", !identifiers().empty()));
-    auto &writer = formatter->writer();
+    auto writer = formatter->writer();
 
-    writer.AddObjKey("name");
-    writer.Add(nameStr());
+    writer->AddObjKey("name");
+    writer->Add(nameStr());
 
-    writer.AddObjKey("calendar");
-    writer.Add(calendar());
+    writer->AddObjKey("calendar");
+    writer->Add(calendar());
 
     const auto &timeOriginStr = temporalOrigin().toString();
     if (!timeOriginStr.empty()) {
-        writer.AddObjKey("time_origin");
-        writer.Add(timeOriginStr);
+        writer->AddObjKey("time_origin");
+        writer->Add(timeOriginStr);
     }
 
     ObjectUsage::baseExportToJSON(formatter);
@@ -2283,10 +2400,10 @@ void EngineeringDatum::_exportToJSON(
 {
     auto objectContext(formatter->MakeObjectContext("EngineeringDatum",
                                                     !identifiers().empty()));
-    auto &writer = formatter->writer();
+    auto writer = formatter->writer();
 
-    writer.AddObjKey("name");
-    writer.Add(nameStr());
+    writer->AddObjKey("name");
+    writer->Add(nameStr());
 
     Datum::getPrivate()->exportAnchorDefinition(formatter);
 
@@ -2369,10 +2486,10 @@ void ParametricDatum::_exportToJSON(
 {
     auto objectContext(formatter->MakeObjectContext("ParametricDatum",
                                                     !identifiers().empty()));
-    auto &writer = formatter->writer();
+    auto writer = formatter->writer();
 
-    writer.AddObjKey("name");
-    writer.Add(nameStr());
+    writer->AddObjKey("name");
+    writer->Add(nameStr());
 
     Datum::getPrivate()->exportAnchorDefinition(formatter);
 

@@ -109,12 +109,17 @@
     "Equidistant Cylindrical (Spherical)"
 #define EPSG_CODE_METHOD_EQUIDISTANT_CYLINDRICAL_SPHERICAL 1029
 
+#define PROJ_WKT2_NAME_METHOD_FLAT_POLAR_QUARTIC "Flat Polar Quartic"
+
 #define PROJ_WKT2_NAME_METHOD_GALL_STEREOGRAPHIC "Gall Stereographic"
 
 #define PROJ_WKT2_NAME_METHOD_GOODE_HOMOLOSINE "Goode Homolosine"
 
 #define PROJ_WKT2_NAME_METHOD_INTERRUPTED_GOODE_HOMOLOSINE \
     "Interrupted Goode Homolosine"
+
+#define PROJ_WKT2_NAME_METHOD_INTERRUPTED_GOODE_HOMOLOSINE_OCEAN \
+    "Interrupted Goode Homolosine Ocean"
 
 #define PROJ_WKT2_NAME_METHOD_GEOSTATIONARY_SATELLITE_SWEEP_X \
     "Geostationary Satellite (Sweep X)"
@@ -178,6 +183,9 @@
 #define EPSG_NAME_METHOD_ORTHOGRAPHIC "Orthographic"
 #define EPSG_CODE_METHOD_ORTHOGRAPHIC 9840
 
+#define PROJ_WKT2_NAME_ORTHOGRAPHIC_SPHERICAL \
+    "Orthographic (Spherical)"
+
 #define PROJ_WKT2_NAME_METHOD_PATTERSON "Patterson"
 
 #define EPSG_NAME_METHOD_AMERICAN_POLYCONIC "American Polyconic"
@@ -225,6 +233,9 @@
 #define EPSG_CODE_METHOD_VERTICAL_PERSPECTIVE 9838
 
 #define PROJ_WKT2_NAME_METHOD_POLE_ROTATION_GRIB_CONVENTION "Pole rotation (GRIB convention)"
+
+#define EPSG_CODE_METHOD_COLOMBIA_URBAN 1052
+#define EPSG_NAME_METHOD_COLOMBIA_URBAN "Colombia Urban"
 
 /* ------------------------------------------------------------------------ */
 
@@ -326,6 +337,9 @@
 
 #define EPSG_NAME_PARAMETER_VIEWPOINT_HEIGHT "Viewpoint height"
 #define EPSG_CODE_PARAMETER_VIEWPOINT_HEIGHT 8840
+
+#define EPSG_NAME_PARAMETER_PROJECTION_PLANE_ORIGIN_HEIGHT "Projection plane origin height"
+#define EPSG_CODE_PARAMETER_PROJECTION_PLANE_ORIGIN_HEIGHT 1039
 
 /* ------------------------------------------------------------------------ */
 
@@ -535,6 +549,9 @@
 
 #define EPSG_CODE_METHOD_VERTICALGRID_NZLVD 1071
 #define EPSG_NAME_METHOD_VERTICALGRID_NZLVD "Vertical Offset by Grid Interpolation (NZLVD)"
+
+#define EPSG_CODE_METHOD_VERTICALGRID_BEV_AT 1080
+#define EPSG_NAME_METHOD_VERTICALGRID_BEV_AT "Vertical Offset by Grid Interpolation (BEV AT)"
 
 #define EPSG_CODE_METHOD_VERTICALGRID_GTX 1084
 #define EPSG_NAME_METHOD_VERTICALGRID_GTX "Vertical Offset by Grid Interpolation (gtx)"

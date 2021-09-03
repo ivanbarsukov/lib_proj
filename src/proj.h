@@ -151,10 +151,28 @@ extern "C" {
 #endif
 #endif
 
+#ifdef PROJ_SUPPRESS_DEPRECATION_MESSAGE
+  #define PROJ_DEPRECATED(decl, msg)            decl
+#elif defined(__has_extension)
+  #if __has_extension(attribute_deprecated_with_message)
+    #define PROJ_DEPRECATED(decl, msg)          decl __attribute__ ((deprecated(msg)))
+  #elif defined(__GNUC__)
+    #define PROJ_DEPRECATED(decl, msg)          decl __attribute__ ((deprecated))
+  #else
+    #define PROJ_DEPRECATED(decl, msg)          decl
+  #endif
+#elif defined(__GNUC__)
+  #define PROJ_DEPRECATED(decl, msg)            decl __attribute__ ((deprecated))
+#elif defined(_MSVC_VER)
+  #define PROJ_DEPRECATED(decl, msg)            __declspec(deprecated(msg)) decl
+#else
+  #define PROJ_DEPRECATED(decl, msg)            decl
+#endif
+
 /* The version numbers should be updated with every release! **/
 #define PROJ_VERSION_MAJOR 7
-#define PROJ_VERSION_MINOR 0
-#define PROJ_VERSION_PATCH 0
+#define PROJ_VERSION_MINOR 2
+#define PROJ_VERSION_PATCH 1
 
 extern char const PROJ_DLL pj_release[]; /* global release id string */
 
@@ -343,13 +361,14 @@ typedef struct projCtx_t PJ_CONTEXT;
 #endif
 PJ_CONTEXT PROJ_DLL *proj_context_create (void);
 PJ_CONTEXT PROJ_DLL *proj_context_destroy (PJ_CONTEXT *ctx);
+PJ_CONTEXT PROJ_DLL *proj_context_clone (PJ_CONTEXT *ctx);
 
 /** Callback to resolve a filename to a full path */
 typedef const char* (*proj_file_finder) (PJ_CONTEXT *ctx, const char*, void* user_data);
 
 void PROJ_DLL proj_context_set_file_finder(PJ_CONTEXT *ctx, proj_file_finder finder, void* user_data);
 void PROJ_DLL proj_context_set_search_paths(PJ_CONTEXT *ctx, int count_paths, const char* const* paths);
-
+void PROJ_DLL proj_context_set_ca_bundle_path(PJ_CONTEXT *ctx, const char *path);
 void PROJ_DLL proj_context_use_proj4_init_rules(PJ_CONTEXT *ctx, int enable);
 int PROJ_DLL proj_context_get_use_proj4_init_rules(PJ_CONTEXT *ctx, int from_legacy_code_path);
 
@@ -494,6 +513,10 @@ int PROJ_DLL proj_context_is_network_enabled(PJ_CONTEXT* ctx);
 
 void PROJ_DLL proj_context_set_url_endpoint(PJ_CONTEXT* ctx, const char* url);
 
+const char PROJ_DLL *proj_context_get_url_endpoint(PJ_CONTEXT* ctx);
+
+const char PROJ_DLL *proj_context_get_user_writable_directory(PJ_CONTEXT *ctx, int create);
+
 void PROJ_DLL proj_grid_cache_set_enable(PJ_CONTEXT* ctx, int enabled);
 
 void PROJ_DLL proj_grid_cache_set_filename(PJ_CONTEXT* ctx, const char* fullname);
@@ -524,7 +547,9 @@ PJ PROJ_DLL *proj_create_crs_to_crs_from_pj(PJ_CONTEXT *ctx,
                                             const PJ *target_crs,
                                             PJ_AREA *area,
                                             const char* const *options);
+/*! @endcond Doxygen_Suppress */
 PJ PROJ_DLL *proj_normalize_for_visualization(PJ_CONTEXT *ctx, const PJ* obj);
+/*! @cond Doxygen_Suppress */
 void PROJ_DLL proj_assign_context(PJ* pj, PJ_CONTEXT* ctx);
 PJ PROJ_DLL *proj_destroy (PJ *P);
 
@@ -549,6 +574,8 @@ typedef enum PJ_DIRECTION PJ_DIRECTION;
 int PROJ_DLL proj_angular_input (PJ *P, enum PJ_DIRECTION dir);
 int PROJ_DLL proj_angular_output (PJ *P, enum PJ_DIRECTION dir);
 
+int PROJ_DLL proj_degree_input (PJ *P, enum PJ_DIRECTION dir);
+int PROJ_DLL proj_degree_output (PJ *P, enum PJ_DIRECTION dir);
 
 PJ_COORD PROJ_DLL proj_trans (PJ *P, PJ_DIRECTION direction, PJ_COORD coord);
 int PROJ_DLL proj_trans_array (PJ *P, PJ_DIRECTION direction, size_t n, PJ_COORD *coord);
@@ -608,8 +635,8 @@ PJ_INIT_INFO PROJ_DLL proj_init_info(const char *initname);
 /* Get lists of operations, ellipsoids, units and prime meridians. */
 const PJ_OPERATIONS       PROJ_DLL *proj_list_operations(void);
 const PJ_ELLPS            PROJ_DLL *proj_list_ellps(void);
-const PJ_UNITS            PROJ_DLL *proj_list_units(void);
-const PJ_UNITS            PROJ_DLL *proj_list_angular_units(void);
+PROJ_DEPRECATED(const PJ_UNITS            PROJ_DLL *proj_list_units(void), "Deprecated by proj_get_units_from_database");
+PROJ_DEPRECATED(const PJ_UNITS            PROJ_DLL *proj_list_angular_units(void), "Deprecated by proj_get_units_from_database");
 const PJ_PRIME_MERIDIANS  PROJ_DLL *proj_list_prime_meridians(void);
 
 /* These are trivial, and while occasionally useful in real code, primarily here to      */
@@ -709,6 +736,10 @@ typedef enum
     PJ_TYPE_TRANSFORMATION,
     PJ_TYPE_CONCATENATED_OPERATION,
     PJ_TYPE_OTHER_COORDINATE_OPERATION,
+
+    PJ_TYPE_TEMPORAL_DATUM,
+    PJ_TYPE_ENGINEERING_DATUM,
+    PJ_TYPE_PARAMETRIC_DATUM,
 } PJ_TYPE;
 
 /** Comparison criterion. */
@@ -912,6 +943,39 @@ typedef struct
     int allow_deprecated;
 } PROJ_CRS_LIST_PARAMETERS;
 
+/** \brief Structure given description of a unit.
+ *
+ * This structure may grow over time, and should not be directly allocated by
+ * client code.
+ * @since 7.1
+ */
+typedef struct
+{
+    /** Authority name. */
+    char* auth_name;
+
+    /** Object code. */
+    char* code;
+
+    /** Object name. For example "metre", "US survey foot", etc. */
+    char* name;
+
+    /** Category of the unit: one of "linear", "linear_per_time", "angular",
+     * "angular_per_time", "scale", "scale_per_time" or "time" */
+    char* category;
+
+    /** Conversion factor to apply to transform from that unit to the
+     * corresponding SI unit (metre for "linear", radian for "angular", etc.).
+     * It might be 0 in some cases to indicate no known conversion factor. */
+    double conv_factor;
+
+    /** PROJ short name, like "m", "ft", "us-ft", etc... Might be NULL */
+    char* proj_short_name;
+
+    /** Whether the object is deprecated */
+    int deprecated;
+} PROJ_UNIT_INFO;
+
 
 /**@}*/
 
@@ -1077,6 +1141,15 @@ PROJ_CRS_INFO PROJ_DLL **proj_get_crs_info_list_from_database(
 
 void PROJ_DLL proj_crs_info_list_destroy(PROJ_CRS_INFO** list);
 
+PROJ_UNIT_INFO PROJ_DLL **proj_get_units_from_database(
+                                            PJ_CONTEXT *ctx,
+                                            const char *auth_name,
+                                            const char *category,
+                                            int allow_deprecated,
+                                            int *out_result_count);
+
+void PROJ_DLL proj_unit_list_destroy(PROJ_UNIT_INFO** list);
+
 /* ------------------------------------------------------------------------- */
 
 
@@ -1140,6 +1213,11 @@ void PROJ_DLL proj_operation_factory_context_set_discard_superseded(
     PJ_OPERATION_FACTORY_CONTEXT *factory_ctx,
     int discard);
 
+void PROJ_DLL proj_operation_factory_context_set_allow_ballpark_transformations(
+    PJ_CONTEXT *ctx,
+    PJ_OPERATION_FACTORY_CONTEXT *factory_ctx,
+    int allow);
+
 /* ------------------------------------------------------------------------- */
 
 
@@ -1157,6 +1235,11 @@ PJ PROJ_DLL *proj_list_get(PJ_CONTEXT *ctx,
 
 void PROJ_DLL proj_list_destroy(PJ_OBJ_LIST *result);
 
+int PROJ_DLL proj_get_suggested_operation(PJ_CONTEXT *ctx,
+                                          PJ_OBJ_LIST *operations,
+                                          PJ_DIRECTION direction,
+                                          PJ_COORD coord);
+
 /* ------------------------------------------------------------------------- */
 
 PJ PROJ_DLL *proj_crs_get_geodetic_crs(PJ_CONTEXT *ctx, const PJ *crs);
@@ -1166,6 +1249,23 @@ PJ PROJ_DLL *proj_crs_get_horizontal_datum(PJ_CONTEXT *ctx, const PJ *crs);
 PJ PROJ_DLL *proj_crs_get_sub_crs(PJ_CONTEXT *ctx, const PJ *crs, int index);
 
 PJ PROJ_DLL *proj_crs_get_datum(PJ_CONTEXT *ctx, const PJ *crs);
+
+PJ PROJ_DLL *proj_crs_get_datum_ensemble(PJ_CONTEXT *ctx, const PJ *crs);
+
+PJ PROJ_DLL *proj_crs_get_datum_forced(PJ_CONTEXT *ctx, const PJ *crs);
+
+int PROJ_DLL proj_datum_ensemble_get_member_count(PJ_CONTEXT *ctx,
+                                                  const PJ *datum_ensemble);
+
+double PROJ_DLL proj_datum_ensemble_get_accuracy(PJ_CONTEXT *ctx,
+                                                 const PJ *datum_ensemble);
+
+PJ PROJ_DLL *proj_datum_ensemble_get_member(PJ_CONTEXT *ctx,
+                                            const PJ *datum_ensemble,
+                                            int member_index);
+
+double PROJ_DLL proj_dynamic_datum_get_frame_reference_epoch(PJ_CONTEXT *ctx,
+                                                     const PJ *datum);
 
 PJ PROJ_DLL *proj_crs_get_coordinate_system(PJ_CONTEXT *ctx, const PJ *crs);
 

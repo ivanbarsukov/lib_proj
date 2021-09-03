@@ -132,6 +132,15 @@ class CApi : public ::testing::Test {
         ObjectKeeper &operator=(const ObjectKeeper &) = delete;
     };
 
+    struct PjContextKeeper {
+        PJ_CONTEXT *m_ctxt = nullptr;
+        explicit PjContextKeeper(PJ_CONTEXT *ctxt) : m_ctxt(ctxt) {}
+        ~PjContextKeeper() { proj_context_destroy(m_ctxt); }
+
+        PjContextKeeper(const PjContextKeeper &) = delete;
+        PjContextKeeper &operator=(const PjContextKeeper &) = delete;
+    };
+
     struct ContextKeeper {
         PJ_OPERATION_FACTORY_CONTEXT *m_op_ctxt = nullptr;
         explicit ContextKeeper(PJ_OPERATION_FACTORY_CONTEXT *op_ctxt)
@@ -424,14 +433,25 @@ TEST_F(CApi, proj_as_wkt) {
     ObjectKeeper keeper_crs4979(crs4979);
     ASSERT_NE(crs4979, nullptr);
 
+    EXPECT_EQ(proj_as_wkt(m_ctxt, crs4979, PJ_WKT1_GDAL, nullptr), nullptr);
+
     // STRICT=NO
     {
-        EXPECT_EQ(proj_as_wkt(m_ctxt, crs4979, PJ_WKT1_GDAL, nullptr), nullptr);
-
         const char *const options[] = {"STRICT=NO", nullptr};
         auto wkt = proj_as_wkt(m_ctxt, crs4979, PJ_WKT1_GDAL, options);
         ASSERT_NE(wkt, nullptr);
         EXPECT_TRUE(std::string(wkt).find("GEOGCS[\"WGS 84\"") == 0) << wkt;
+    }
+
+    // ALLOW_ELLIPSOIDAL_HEIGHT_AS_VERTICAL_CRS=YES
+    {
+        const char *const options[] = {
+            "ALLOW_ELLIPSOIDAL_HEIGHT_AS_VERTICAL_CRS=YES", nullptr};
+        auto wkt = proj_as_wkt(m_ctxt, crs4979, PJ_WKT1_GDAL, options);
+        ASSERT_NE(wkt, nullptr);
+        EXPECT_TRUE(std::string(wkt).find(
+                        "COMPD_CS[\"WGS 84 + Ellipsoid (metre)\"") == 0)
+            << wkt;
     }
 
     // unsupported option
@@ -531,7 +551,7 @@ TEST_F(CApi, proj_as_proj_string_approx_tmerc_option_yes) {
 // ---------------------------------------------------------------------------
 
 TEST_F(CApi, proj_crs_create_bound_crs_to_WGS84) {
-    auto crs = proj_create_from_database(m_ctxt, "EPSG", "3844",
+    auto crs = proj_create_from_database(m_ctxt, "EPSG", "4807",
                                          PJ_CATEGORY_CRS, false, nullptr);
     ObjectKeeper keeper(crs);
     ASSERT_NE(crs, nullptr);
@@ -543,10 +563,8 @@ TEST_F(CApi, proj_crs_create_bound_crs_to_WGS84) {
     auto proj_4 = proj_as_proj_string(m_ctxt, res, PJ_PROJ_4, nullptr);
     ASSERT_NE(proj_4, nullptr);
     EXPECT_EQ(std::string(proj_4),
-              "+proj=sterea +lat_0=46 +lon_0=25 +k=0.99975 +x_0=500000 "
-              "+y_0=500000 +ellps=krass "
-              "+towgs84=2.329,-147.042,-92.08,-0.309,0.325,0.497,5.69 "
-              "+units=m +no_defs +type=crs");
+              "+proj=longlat +ellps=clrk80ign +pm=paris "
+              "+towgs84=-168,-60,320,0,0,0,0 +no_defs +type=crs");
 
     auto base_crs = proj_get_source_crs(m_ctxt, res);
     ObjectKeeper keeper_base_crs(base_crs);
@@ -563,8 +581,7 @@ TEST_F(CApi, proj_crs_create_bound_crs_to_WGS84) {
     std::vector<double> values(7, 0);
     EXPECT_TRUE(proj_coordoperation_get_towgs84_values(m_ctxt, transf,
                                                        values.data(), 7, true));
-    auto expected = std::vector<double>{2.329, -147.042, -92.08, -0.309,
-                                        0.325, 0.497,    5.69};
+    auto expected = std::vector<double>{-168, -60, 320, 0, 0, 0, 0};
     EXPECT_EQ(values, expected);
 
     auto res2 = proj_crs_create_bound_crs(m_ctxt, base_crs, hub_crs, transf);
@@ -714,6 +731,31 @@ TEST_F(CApi, proj_get_type) {
         EXPECT_EQ(proj_get_type(obj), PJ_TYPE_VERTICAL_CRS);
     }
     {
+        auto wkt = "TDATUM[\"Gregorian calendar\",\n"
+                   "     CALENDAR[\"proleptic Gregorian\"],\n"
+                   "     TIMEORIGIN[0000-01-01]]";
+
+        auto datum =
+            proj_create_from_wkt(m_ctxt, wkt, nullptr, nullptr, nullptr);
+        ObjectKeeper keeper(datum);
+        ASSERT_NE(datum, nullptr);
+        EXPECT_EQ(proj_get_type(datum), PJ_TYPE_TEMPORAL_DATUM);
+    }
+    {
+        auto wkt = "ENGINEERINGDATUM[\"Engineering datum\"]";
+        auto datum =
+            proj_create_from_wkt(m_ctxt, wkt, nullptr, nullptr, nullptr);
+        ObjectKeeper keeper(datum);
+        EXPECT_EQ(proj_get_type(datum), PJ_TYPE_ENGINEERING_DATUM);
+    }
+    {
+        auto wkt = "PDATUM[\"Mean Sea Level\",ANCHOR[\"1013.25 hPa at 15°C\"]]";
+        auto datum =
+            proj_create_from_wkt(m_ctxt, wkt, nullptr, nullptr, nullptr);
+        ObjectKeeper keeper(datum);
+        EXPECT_EQ(proj_get_type(datum), PJ_TYPE_PARAMETRIC_DATUM);
+    }
+    {
         auto obj = proj_create_from_wkt(
             m_ctxt, createVerticalCRS()
                         ->datum()
@@ -812,6 +854,28 @@ TEST_F(CApi, proj_create_from_database) {
         ASSERT_NE(datum, nullptr);
         ObjectKeeper keeper(datum);
         EXPECT_EQ(proj_get_type(datum), PJ_TYPE_GEODETIC_REFERENCE_FRAME);
+    }
+    {
+        // International Terrestrial Reference Frame 2008
+        auto datum = proj_create_from_database(
+            m_ctxt, "EPSG", "1061", PJ_CATEGORY_DATUM, false, nullptr);
+        ASSERT_NE(datum, nullptr);
+        ObjectKeeper keeper(datum);
+        EXPECT_EQ(proj_get_type(datum),
+                  PJ_TYPE_DYNAMIC_GEODETIC_REFERENCE_FRAME);
+        EXPECT_EQ(proj_dynamic_datum_get_frame_reference_epoch(m_ctxt, datum),
+                  2005.0);
+    }
+    {
+        // Norway Normal Null 2000
+        auto datum = proj_create_from_database(
+            m_ctxt, "EPSG", "1096", PJ_CATEGORY_DATUM, false, nullptr);
+        ASSERT_NE(datum, nullptr);
+        ObjectKeeper keeper(datum);
+        EXPECT_EQ(proj_get_type(datum),
+                  PJ_TYPE_DYNAMIC_VERTICAL_REFERENCE_FRAME);
+        EXPECT_EQ(proj_dynamic_datum_get_frame_reference_epoch(m_ctxt, datum),
+                  2000.0);
     }
     {
         auto op = proj_create_from_database(m_ctxt, "EPSG", "16031",
@@ -1112,10 +1176,12 @@ TEST_F(CApi, proj_get_authorities_from_database) {
     ASSERT_TRUE(list[2] != nullptr);
     EXPECT_EQ(list[2], std::string("IGNF"));
     ASSERT_TRUE(list[3] != nullptr);
-    EXPECT_EQ(list[3], std::string("OGC"));
+    EXPECT_EQ(list[3], std::string("NKG"));
     ASSERT_TRUE(list[4] != nullptr);
-    EXPECT_EQ(list[4], std::string("PROJ"));
-    EXPECT_EQ(list[5], nullptr);
+    EXPECT_EQ(list[4], std::string("OGC"));
+    ASSERT_TRUE(list[5] != nullptr);
+    EXPECT_EQ(list[5], std::string("PROJ"));
+    EXPECT_EQ(list[6], nullptr);
 }
 
 // ---------------------------------------------------------------------------
@@ -1132,6 +1198,9 @@ TEST_F(CApi, proj_get_codes_from_database) {
                              PJ_TYPE_VERTICAL_REFERENCE_FRAME,
                              PJ_TYPE_DYNAMIC_VERTICAL_REFERENCE_FRAME,
                              PJ_TYPE_DATUM_ENSEMBLE,
+                             PJ_TYPE_TEMPORAL_DATUM,
+                             PJ_TYPE_ENGINEERING_DATUM,
+                             PJ_TYPE_PARAMETRIC_DATUM,
 
                              PJ_TYPE_CRS,
                              PJ_TYPE_GEODETIC_CRS,
@@ -1156,11 +1225,21 @@ TEST_F(CApi, proj_get_codes_from_database) {
         auto list = proj_get_codes_from_database(m_ctxt, "EPSG", type, true);
         ListFreer feer(list);
         if (type == PJ_TYPE_TEMPORAL_CRS || type == PJ_TYPE_BOUND_CRS ||
-            type == PJ_TYPE_UNKNOWN) {
+            type == PJ_TYPE_UNKNOWN || type == PJ_TYPE_TEMPORAL_DATUM ||
+            type == PJ_TYPE_ENGINEERING_DATUM ||
+            type == PJ_TYPE_PARAMETRIC_DATUM) {
             EXPECT_EQ(list, nullptr) << type;
         } else {
             ASSERT_NE(list, nullptr) << type;
             ASSERT_NE(list[0], nullptr) << type;
+            if (type == PJ_TYPE_DYNAMIC_GEODETIC_REFERENCE_FRAME ||
+                type == PJ_TYPE_DYNAMIC_VERTICAL_REFERENCE_FRAME) {
+                auto obj = proj_create_from_database(
+                    m_ctxt, "EPSG", list[0], PJ_CATEGORY_DATUM, false, nullptr);
+                ASSERT_NE(obj, nullptr);
+                ObjectKeeper keeper(obj);
+                EXPECT_EQ(proj_get_type(obj), type) << type << " " << list[0];
+            }
         }
     }
 }
@@ -1348,12 +1427,73 @@ TEST_F(CApi, proj_create_operations) {
 
     EXPECT_EQ(proj_list_get(m_ctxt, res, -1), nullptr);
     EXPECT_EQ(proj_list_get(m_ctxt, res, proj_list_get_count(res)), nullptr);
-    auto op = proj_list_get(m_ctxt, res, 0);
-    ASSERT_NE(op, nullptr);
-    ObjectKeeper keeper_op(op);
-    EXPECT_FALSE(proj_coordoperation_has_ballpark_transformation(m_ctxt, op));
+    {
+        auto op = proj_list_get(m_ctxt, res, 0);
+        ASSERT_NE(op, nullptr);
+        ObjectKeeper keeper_op(op);
+        EXPECT_FALSE(
+            proj_coordoperation_has_ballpark_transformation(m_ctxt, op));
+        EXPECT_EQ(proj_get_name(op), std::string("NAD27 to NAD83 (3)"));
+    }
 
-    EXPECT_EQ(proj_get_name(op), std::string("NAD27 to NAD83 (3)"));
+    {
+        PJ_COORD coord;
+        coord.xy.x = 40;
+        coord.xy.y = -100;
+        int idx = proj_get_suggested_operation(m_ctxt, res, PJ_FWD, coord);
+        ASSERT_GE(idx, 0);
+        ASSERT_LT(idx, proj_list_get_count(res));
+        auto op = proj_list_get(m_ctxt, res, idx);
+        ASSERT_NE(op, nullptr);
+        ObjectKeeper keeper_op(op);
+        // Transformation for USA
+        EXPECT_EQ(proj_get_name(op), std::string("NAD27 to NAD83 (1)"));
+    }
+
+    {
+        PJ_COORD coord;
+        coord.xy.x = 40;
+        coord.xy.y = 10;
+        int idx = proj_get_suggested_operation(m_ctxt, res, PJ_FWD, coord);
+        EXPECT_GE(idx, -1);
+    }
+}
+
+// ---------------------------------------------------------------------------
+
+TEST_F(CApi, proj_get_suggested_operation_with_operations_without_area_of_use) {
+    auto ctxt = proj_create_operation_factory_context(m_ctxt, nullptr);
+    ASSERT_NE(ctxt, nullptr);
+    ContextKeeper keeper_ctxt(ctxt);
+
+    // NAD83(2011) geocentric
+    auto source_crs = proj_create_from_database(
+        m_ctxt, "EPSG", "6317", PJ_CATEGORY_CRS, false, nullptr);
+    ASSERT_NE(source_crs, nullptr);
+    ObjectKeeper keeper_source_crs(source_crs);
+
+    // NAD83(2011) 2D
+    auto target_crs = proj_create_from_database(
+        m_ctxt, "EPSG", "6318", PJ_CATEGORY_CRS, false, nullptr);
+    ASSERT_NE(target_crs, nullptr);
+    ObjectKeeper keeper_target_crs(target_crs);
+
+    proj_operation_factory_context_set_spatial_criterion(
+        m_ctxt, ctxt, PROJ_SPATIAL_CRITERION_PARTIAL_INTERSECTION);
+
+    proj_operation_factory_context_set_grid_availability_use(
+        m_ctxt, ctxt, PROJ_GRID_AVAILABILITY_IGNORED);
+
+    auto res = proj_create_operations(m_ctxt, source_crs, target_crs, ctxt);
+    ASSERT_NE(res, nullptr);
+    ObjListKeeper keeper_res(res);
+
+    PJ_COORD coord;
+    coord.xyz.x = -463930;
+    coord.xyz.y = -4414006;
+    coord.xyz.z = 4562247;
+    int idx = proj_get_suggested_operation(m_ctxt, res, PJ_FWD, coord);
+    EXPECT_GE(idx, 0);
 }
 
 // ---------------------------------------------------------------------------
@@ -1385,7 +1525,7 @@ TEST_F(CApi, proj_create_operations_discard_superseded) {
     ASSERT_NE(res, nullptr);
     ObjListKeeper keeper_res(res);
 
-    EXPECT_EQ(proj_list_get_count(res), 2);
+    EXPECT_EQ(proj_list_get_count(res), 4);
 }
 
 // ---------------------------------------------------------------------------
@@ -1436,7 +1576,7 @@ TEST_F(CApi, proj_create_operations_with_pivot) {
 
     // There is no direct transformations between both
 
-    // Default behaviour: allow any pivot
+    // Default behavior: allow any pivot
     {
         auto ctxt = proj_create_operation_factory_context(m_ctxt, nullptr);
         ASSERT_NE(ctxt, nullptr);
@@ -1494,7 +1634,7 @@ TEST_F(CApi, proj_create_operations_with_pivot) {
         auto res = proj_create_operations(m_ctxt, source_crs, target_crs, ctxt);
         ASSERT_NE(res, nullptr);
         ObjListKeeper keeper_res(res);
-        EXPECT_EQ(proj_list_get_count(res), 7);
+        EXPECT_EQ(proj_list_get_count(res), 8);
         auto op = proj_list_get(m_ctxt, res, 0);
         ASSERT_NE(op, nullptr);
         ObjectKeeper keeper_op(op);
@@ -1534,6 +1674,63 @@ TEST_F(CApi, proj_create_operations_with_pivot) {
             proj_get_name(op),
             std::string(
                 "Inverse of JGD2000 to WGS 84 (1) + JGD2000 to JGD2011 (2)"));
+    }
+}
+
+// ---------------------------------------------------------------------------
+
+TEST_F(CApi, proj_create_operations_allow_ballpark_transformations) {
+    auto ctxt = proj_create_operation_factory_context(m_ctxt, nullptr);
+    ASSERT_NE(ctxt, nullptr);
+    ContextKeeper keeper_ctxt(ctxt);
+
+    auto source_crs = proj_create_from_database(
+        m_ctxt, "EPSG", "4267", PJ_CATEGORY_CRS, false, nullptr); // NAD27
+    ASSERT_NE(source_crs, nullptr);
+    ObjectKeeper keeper_source_crs(source_crs);
+
+    auto target_crs = proj_create_from_database(
+        m_ctxt, "EPSG", "4258", PJ_CATEGORY_CRS, false, nullptr); // ETRS89
+    ASSERT_NE(target_crs, nullptr);
+    ObjectKeeper keeper_target_crs(target_crs);
+
+    proj_operation_factory_context_set_spatial_criterion(
+        m_ctxt, ctxt, PROJ_SPATIAL_CRITERION_PARTIAL_INTERSECTION);
+
+    proj_operation_factory_context_set_grid_availability_use(
+        m_ctxt, ctxt, PROJ_GRID_AVAILABILITY_IGNORED);
+
+    // Default: allowed implicitly
+    {
+        auto res = proj_create_operations(m_ctxt, source_crs, target_crs, ctxt);
+        ASSERT_NE(res, nullptr);
+        ObjListKeeper keeper_res(res);
+
+        EXPECT_EQ(proj_list_get_count(res), 1);
+    }
+
+    // Allow explicitly
+    {
+        proj_operation_factory_context_set_allow_ballpark_transformations(
+            m_ctxt, ctxt, true);
+
+        auto res = proj_create_operations(m_ctxt, source_crs, target_crs, ctxt);
+        ASSERT_NE(res, nullptr);
+        ObjListKeeper keeper_res(res);
+
+        EXPECT_EQ(proj_list_get_count(res), 1);
+    }
+
+    // Disallow
+    {
+        proj_operation_factory_context_set_allow_ballpark_transformations(
+            m_ctxt, ctxt, false);
+
+        auto res = proj_create_operations(m_ctxt, source_crs, target_crs, ctxt);
+        ASSERT_NE(res, nullptr);
+        ObjListKeeper keeper_res(res);
+
+        EXPECT_EQ(proj_list_get_count(res), 0);
     }
 }
 
@@ -1775,7 +1972,7 @@ TEST_F(CApi, proj_get_area_of_use) {
         EXPECT_EQ(e, 180);
         EXPECT_EQ(n, 90);
         ASSERT_TRUE(name != nullptr);
-        EXPECT_EQ(std::string(name), "World");
+        EXPECT_EQ(std::string(name), "World.");
     }
     {
         auto obj = proj_create(m_ctxt, "+proj=longlat +type=crs");
@@ -2498,6 +2695,8 @@ TEST_F(CApi, proj_cs_get_axis_info) {
 TEST_F(CApi, proj_context_get_database_metadata) {
     EXPECT_TRUE(proj_context_get_database_metadata(m_ctxt, "IGNF.VERSION") !=
                 nullptr);
+
+    EXPECT_TRUE(proj_context_get_database_metadata(m_ctxt, "FOO") == nullptr);
 }
 
 // ---------------------------------------------------------------------------
@@ -2736,7 +2935,12 @@ TEST_F(CApi, proj_create_engineering_crs) {
     ASSERT_NE(crs, nullptr);
     auto wkt = proj_as_wkt(m_ctxt, crs, PJ_WKT1_GDAL, nullptr);
     ASSERT_NE(wkt, nullptr);
-    EXPECT_EQ(std::string(wkt), "LOCAL_CS[\"name\"]") << wkt;
+    EXPECT_EQ(std::string(wkt), "LOCAL_CS[\"name\",\n"
+                                "    UNIT[\"metre\",1,\n"
+                                "        AUTHORITY[\"EPSG\",\"9001\"]],\n"
+                                "    AXIS[\"Easting\",EAST],\n"
+                                "    AXIS[\"Northing\",NORTH]]")
+        << wkt;
 }
 
 // ---------------------------------------------------------------------------
@@ -3236,7 +3440,7 @@ TEST_F(CApi, proj_get_crs_info_list_from_database) {
                 EXPECT_EQ(list[i]->south_lat_degree, -90.0);
                 EXPECT_EQ(list[i]->east_lon_degree, 180.0);
                 EXPECT_EQ(list[i]->north_lat_degree, 90.0);
-                EXPECT_EQ(std::string(list[i]->area_name), "World");
+                EXPECT_EQ(std::string(list[i]->area_name), "World.");
                 EXPECT_EQ(list[i]->projection_method_name, nullptr);
             } else if (code == "4978") {
                 found4978 = true;
@@ -3401,6 +3605,48 @@ TEST_F(CApi, proj_get_crs_info_list_from_database) {
 
 // ---------------------------------------------------------------------------
 
+TEST_F(CApi, proj_get_units_from_database) {
+    { proj_unit_list_destroy(nullptr); }
+
+    {
+        auto list = proj_get_units_from_database(nullptr, nullptr, nullptr,
+                                                 true, nullptr);
+        ASSERT_NE(list, nullptr);
+        ASSERT_NE(list[0], nullptr);
+        ASSERT_NE(list[0]->auth_name, nullptr);
+        ASSERT_NE(list[0]->code, nullptr);
+        ASSERT_NE(list[0]->name, nullptr);
+        proj_unit_list_destroy(list);
+    }
+
+    {
+        int result_count = 0;
+        auto list = proj_get_units_from_database(nullptr, "EPSG", "linear",
+                                                 false, &result_count);
+        ASSERT_NE(list, nullptr);
+        EXPECT_GT(result_count, 1);
+        EXPECT_EQ(list[result_count], nullptr);
+        bool found9001 = false;
+        for (int i = 0; i < result_count; i++) {
+            EXPECT_EQ(std::string(list[i]->auth_name), "EPSG");
+            if (std::string(list[i]->code) == "9001") {
+                EXPECT_EQ(std::string(list[i]->name), "metre");
+                EXPECT_EQ(std::string(list[i]->category), "linear");
+                EXPECT_EQ(list[i]->conv_factor, 1.0);
+                ASSERT_NE(list[i]->proj_short_name, nullptr);
+                EXPECT_EQ(std::string(list[i]->proj_short_name), "m");
+                EXPECT_EQ(list[i]->deprecated, 0);
+                found9001 = true;
+            }
+            EXPECT_EQ(list[i]->deprecated, 0);
+        }
+        EXPECT_TRUE(found9001);
+        proj_unit_list_destroy(list);
+    }
+}
+
+// ---------------------------------------------------------------------------
+
 TEST_F(CApi, proj_normalize_for_visualization) {
 
     {
@@ -3531,37 +3777,64 @@ TEST_F(CApi, proj_coordoperation_create_inverse) {
     ObjectKeeper keeper_Pinversed(Pinversed);
     ASSERT_NE(Pinversed, nullptr);
 
-    auto projstr = proj_as_proj_string(m_ctxt, Pinversed, PJ_PROJ_5, nullptr);
+    const char *options[] = {"MULTILINE=YES", "INDENTATION_WIDTH=4",
+                             "MAX_LINE_LENGTH=40", nullptr};
+    auto projstr = proj_as_proj_string(m_ctxt, Pinversed, PJ_PROJ_5, options);
     ASSERT_NE(projstr, nullptr);
-    EXPECT_EQ(std::string(projstr),
-              "+proj=pipeline +step +proj=axisswap +order=2,1 +step "
-              "+proj=unitconvert +xy_in=deg +xy_out=rad +step +proj=push +v_3 "
-              "+step +proj=cart +ellps=WGS84 +step +inv +proj=helmert +x=293 "
-              "+y=836 +z=318 +rx=0.5 +ry=1.6 +rz=-2.8 +s=2.1 "
-              "+convention=position_vector +step +inv +proj=cart "
-              "+ellps=evrst30 +step +proj=pop +v_3 +step +proj=unitconvert "
-              "+xy_in=rad +xy_out=deg +step +proj=axisswap +order=2,1");
+    const char *expected_projstr = "+proj=pipeline\n"
+                                   "    +step +proj=axisswap +order=2,1\n"
+                                   "    +step +proj=unitconvert +xy_in=deg\n"
+                                   "          +xy_out=rad\n"
+                                   "    +step +proj=push +v_3\n"
+                                   "    +step +proj=cart +ellps=WGS84\n"
+                                   "    +step +inv +proj=helmert +x=293\n"
+                                   "          +y=836 +z=318 +rx=0.5 +ry=1.6\n"
+                                   "          +rz=-2.8 +s=2.1\n"
+                                   "          +convention=position_vector\n"
+                                   "    +step +inv +proj=cart +ellps=evrst30\n"
+                                   "    +step +proj=pop +v_3\n"
+                                   "    +step +proj=unitconvert +xy_in=rad\n"
+                                   "          +xy_out=deg\n"
+                                   "    +step +proj=axisswap +order=2,1";
+    EXPECT_EQ(std::string(projstr), expected_projstr);
 }
 
 // ---------------------------------------------------------------------------
 
 TEST_F(CApi, proj_get_remarks) {
-    auto co = proj_create_from_database(m_ctxt, "EPSG", "8048",
-                                        PJ_CATEGORY_COORDINATE_OPERATION, false,
-                                        nullptr);
-    ObjectKeeper keeper(co);
-    ASSERT_NE(co, nullptr);
+    // Transformation
+    {
+        auto co = proj_create_from_database(m_ctxt, "EPSG", "8048",
+                                            PJ_CATEGORY_COORDINATE_OPERATION,
+                                            false, nullptr);
+        ObjectKeeper keeper(co);
+        ASSERT_NE(co, nullptr);
 
-    auto remarks = proj_get_remarks(co);
-    ASSERT_NE(remarks, nullptr);
-    EXPECT_TRUE(std::string(remarks).find(
-                    "Scale difference in ppb where 1/billion = 1E-9.") == 0)
-        << remarks;
+        auto remarks = proj_get_remarks(co);
+        ASSERT_NE(remarks, nullptr);
+        EXPECT_TRUE(std::string(remarks).find(
+                        "Scale difference in ppb where 1/billion = 1E-9.") == 0)
+            << remarks;
+    }
+
+    // Conversion
+    {
+        auto co = proj_create_from_database(m_ctxt, "EPSG", "3811",
+                                            PJ_CATEGORY_COORDINATE_OPERATION,
+                                            false, nullptr);
+        ObjectKeeper keeper(co);
+        ASSERT_NE(co, nullptr);
+
+        auto remarks = proj_get_remarks(co);
+        ASSERT_NE(remarks, nullptr);
+        EXPECT_EQ(remarks, std::string("Replaces Lambert 2005."));
+    }
 }
 
 // ---------------------------------------------------------------------------
 
 TEST_F(CApi, proj_get_scope) {
+    // Transformation
     {
         auto co = proj_create_from_database(m_ctxt, "EPSG", "8048",
                                             PJ_CATEGORY_COORDINATE_OPERATION,
@@ -3572,9 +3845,24 @@ TEST_F(CApi, proj_get_scope) {
         auto scope = proj_get_scope(co);
         ASSERT_NE(scope, nullptr);
         EXPECT_EQ(scope,
-                  std::string("Conformal transformation of GDA94 coordinates "
-                              "that have been derived through GNSS CORS."));
+                  std::string("Transformation of GDA94 coordinates that have "
+                              "been derived through GNSS CORS."));
     }
+
+    // Conversion
+    {
+        auto co = proj_create_from_database(m_ctxt, "EPSG", "3811",
+                                            PJ_CATEGORY_COORDINATE_OPERATION,
+                                            false, nullptr);
+        ObjectKeeper keeper(co);
+        ASSERT_NE(co, nullptr);
+
+        auto scope = proj_get_scope(co);
+        ASSERT_NE(scope, nullptr);
+        EXPECT_EQ(scope,
+                  std::string("Engineering survey, topographic mapping."));
+    }
+
     {
         auto P = proj_create(m_ctxt, "+proj=noop");
         ObjectKeeper keeper(P);
@@ -3804,6 +4092,76 @@ TEST_F(Fixture_proj_context_set_autoclose_database,
 TEST_F(Fixture_proj_context_set_autoclose_database,
        proj_context_set_autoclose_database_false) {
     test(false);
+}
+
+// ---------------------------------------------------------------------------
+
+TEST_F(CApi, proj_context_copy_from_default) {
+    auto c_path = proj_context_get_database_path(m_ctxt);
+    ASSERT_TRUE(c_path != nullptr);
+    std::string path(c_path);
+
+    FILE *f = fopen(path.c_str(), "rb");
+    ASSERT_NE(f, nullptr);
+    fseek(f, 0, SEEK_END);
+    auto length = ftell(f);
+    std::string content;
+    content.resize(static_cast<size_t>(length));
+    fseek(f, 0, SEEK_SET);
+    auto read_bytes = fread(&content[0], 1, content.size(), f);
+    ASSERT_EQ(read_bytes, content.size());
+    fclose(f);
+    const char *tempdir = getenv("TEMP");
+    if (!tempdir) {
+        tempdir = getenv("TMP");
+    }
+    if (!tempdir) {
+        tempdir = "/tmp";
+    }
+    std::string tmp_filename(std::string(tempdir) +
+                             "/test_proj_context_set_autoclose_database.db");
+    f = fopen(tmp_filename.c_str(), "wb");
+    if (!f) {
+        std::cerr << "Cannot create " << tmp_filename << std::endl;
+        return;
+    }
+    fwrite(content.data(), 1, content.size(), f);
+    fclose(f);
+
+    auto c_default_path = proj_context_get_database_path(nullptr);
+    std::string default_path(c_default_path ? c_default_path : "");
+    EXPECT_TRUE(proj_context_set_database_path(nullptr, tmp_filename.c_str(),
+                                               nullptr, nullptr));
+
+    PJ_CONTEXT *new_ctx = proj_context_create();
+    EXPECT_TRUE(proj_context_set_database_path(
+        nullptr, default_path.empty() ? nullptr : default_path.c_str(), nullptr,
+        nullptr));
+
+    EXPECT_NE(new_ctx, nullptr);
+    PjContextKeeper keeper_ctxt(new_ctx);
+    auto c_new_path = proj_context_get_database_path(new_ctx);
+    ASSERT_TRUE(c_new_path != nullptr);
+    std::string new_db_path(c_new_path);
+    ASSERT_EQ(new_db_path, tmp_filename);
+}
+
+// ---------------------------------------------------------------------------
+
+TEST_F(CApi, proj_context_clone) {
+    int new_init_rules =
+        proj_context_get_use_proj4_init_rules(NULL, 0) > 0 ? 0 : 1;
+    PJ_CONTEXT *new_ctx = proj_context_create();
+    EXPECT_NE(new_ctx, nullptr);
+    PjContextKeeper keeper_ctxt(new_ctx);
+    proj_context_use_proj4_init_rules(new_ctx, new_init_rules);
+    PJ_CONTEXT *clone_ctx = proj_context_clone(new_ctx);
+    EXPECT_NE(clone_ctx, nullptr);
+    PjContextKeeper keeper_clone_ctxt(clone_ctx);
+    ASSERT_EQ(proj_context_get_use_proj4_init_rules(new_ctx, 0),
+              proj_context_get_use_proj4_init_rules(clone_ctx, 0));
+    EXPECT_NE(proj_context_get_use_proj4_init_rules(NULL, 0),
+              proj_context_get_use_proj4_init_rules(clone_ctx, 0));
 }
 
 // ---------------------------------------------------------------------------
@@ -4144,10 +4502,7 @@ TEST_F(CApi, proj_create_crs_to_crs_with_only_ballpark_transformations) {
     coord = proj_trans(Pnormalized, PJ_FWD, coord);
     EXPECT_NEAR(coord.xyzt.x, 3.0, 1e-9);
     EXPECT_NEAR(coord.xyzt.y, 40.65085651660555, 1e-9);
-    if (coord.xyzt.z != 0) {
-        // z will depend if the egm96_15.gtx grid is there or not
-        EXPECT_NEAR(coord.xyzt.z, 47.04784081844435, 1e-3);
-    }
+    EXPECT_NEAR(coord.xyzt.z, 47.72600023608570, 1e-3);
 }
 
 // ---------------------------------------------------------------------------
@@ -4155,10 +4510,6 @@ TEST_F(CApi, proj_create_crs_to_crs_with_only_ballpark_transformations) {
 TEST_F(
     CApi,
     proj_create_crs_to_crs_from_custom_compound_crs_with_NAD83_2011_and_geoidgrid_ref_against_WGS84_to_WGS84_G1762) {
-
-    if (strcmp(proj_grid_info("egm96_15.gtx").format, "missing") == 0) {
-        return; // use GTEST_SKIP() if we upgrade gtest
-    }
 
     PJ *P;
 
@@ -4192,7 +4543,7 @@ TEST_F(
     // In this particular case, PROJ computes a transformation from NAD83(2011)
     // (EPSG:6318) to WGS84 (EPSG:4979) for the initial horizontal adjustment
     // before the geoidgrids application. There are 6 candidate transformations
-    // for that in subzones of the US and one last no-op tranformation flagged
+    // for that in subzones of the US and one last no-op transformation flagged
     // as ballpark. That one used to be eliminated because by
     // proj_create_crs_to_crs() because there were non Ballpark transformations
     // available. This resulted thus in an error when transforming outside of
@@ -4214,7 +4565,7 @@ TEST_F(
 
     EXPECT_NEAR(outcoord.xyzt.x, 35.09499307271, 1e-9);
     EXPECT_NEAR(outcoord.xyzt.y, -118.64014868921, 1e-9);
-    EXPECT_NEAR(outcoord.xyzt.z, 118.059, 1e-3);
+    EXPECT_NEAR(outcoord.xyzt.z, 117.655, 1e-3);
 }
 
 // ---------------------------------------------------------------------------
@@ -4222,10 +4573,6 @@ TEST_F(
 TEST_F(
     CApi,
     proj_create_crs_to_crs_from_custom_compound_crs_with_NAD83_2011_and_geoidgrid_ref_against_NAD83_2011_to_WGS84_G1762) {
-
-    if (strcmp(proj_grid_info("egm96_15.gtx").format, "missing") == 0) {
-        return; // use GTEST_SKIP() if we upgrade gtest
-    }
 
     PJ *P;
 
@@ -4278,7 +4625,7 @@ TEST_F(
 
     EXPECT_NEAR(outcoord.xyzt.x, 35.000003665064803, 1e-9);
     EXPECT_NEAR(outcoord.xyzt.y, -118.00001414221214, 1e-9);
-    EXPECT_NEAR(outcoord.xyzt.z, -32.5823, 1e-3);
+    EXPECT_NEAR(outcoord.xyzt.z, -32.8110, 1e-3);
 }
 
 // ---------------------------------------------------------------------------
@@ -4291,10 +4638,11 @@ TEST_F(CApi, proj_create_vertical_crs_ex) {
     ObjectKeeper keeper_horiz_crs(horiz_crs);
     ASSERT_NE(horiz_crs, nullptr);
 
+    const char *options[] = {"ACCURACY=123", nullptr};
     auto vert_crs = proj_create_vertical_crs_ex(
         m_ctxt, "myVertCRS (ftUS)", "myVertDatum", nullptr, nullptr,
         "US survey foot", 0.304800609601219, "PROJ @foo.gtx", nullptr, nullptr,
-        nullptr, nullptr);
+        nullptr, options);
     ObjectKeeper keeper_vert_crs(vert_crs);
     ASSERT_NE(vert_crs, nullptr);
 
@@ -4308,10 +4656,21 @@ TEST_F(CApi, proj_create_vertical_crs_ex) {
     ObjectKeeper keeper_geog_crs(geog_crs);
     ASSERT_NE(geog_crs, nullptr);
 
-    auto P = proj_create_crs_to_crs_from_pj(m_ctxt, compound, geog_crs, nullptr,
-                                            nullptr);
-    ObjectKeeper keeper_P(P);
-    ASSERT_NE(P, nullptr);
+    PJ_OPERATION_FACTORY_CONTEXT *ctxt =
+        proj_create_operation_factory_context(m_ctxt, nullptr);
+    ASSERT_NE(ctxt, nullptr);
+    ContextKeeper keeper_ctxt(ctxt);
+    proj_operation_factory_context_set_grid_availability_use(
+        m_ctxt, ctxt, PROJ_GRID_AVAILABILITY_IGNORED);
+    proj_operation_factory_context_set_spatial_criterion(
+        m_ctxt, ctxt, PROJ_SPATIAL_CRITERION_PARTIAL_INTERSECTION);
+    PJ_OBJ_LIST *operations =
+        proj_create_operations(m_ctxt, compound, geog_crs, ctxt);
+    ASSERT_NE(operations, nullptr);
+    ObjListKeeper keeper_operations(operations);
+    EXPECT_GE(proj_list_get_count(operations), 1);
+    auto P = proj_list_get(m_ctxt, operations, 0);
+    ObjectKeeper keeper_transform(P);
 
     auto name = proj_get_name(P);
     ASSERT_TRUE(name != nullptr);
@@ -4329,6 +4688,8 @@ TEST_F(CApi, proj_create_vertical_crs_ex) {
               "+step +proj=vgridshift +grids=@foo.gtx +multiplier=1 "
               "+step +proj=unitconvert +xy_in=rad +xy_out=deg "
               "+step +proj=axisswap +order=2,1");
+
+    ASSERT_EQ(proj_coordoperation_get_accuracy(m_ctxt, P), 123.0);
 }
 
 // ---------------------------------------------------------------------------
@@ -4362,10 +4723,21 @@ TEST_F(CApi, proj_create_vertical_crs_ex_with_geog_crs) {
     ObjectKeeper keeper_geog_crs(geog_crs);
     ASSERT_NE(geog_crs, nullptr);
 
-    auto P = proj_create_crs_to_crs_from_pj(m_ctxt, compound, geog_crs, nullptr,
-                                            nullptr);
-    ObjectKeeper keeper_P(P);
-    ASSERT_NE(P, nullptr);
+    PJ_OPERATION_FACTORY_CONTEXT *ctxt =
+        proj_create_operation_factory_context(m_ctxt, nullptr);
+    ASSERT_NE(ctxt, nullptr);
+    ContextKeeper keeper_ctxt(ctxt);
+    proj_operation_factory_context_set_grid_availability_use(
+        m_ctxt, ctxt, PROJ_GRID_AVAILABILITY_IGNORED);
+    proj_operation_factory_context_set_spatial_criterion(
+        m_ctxt, ctxt, PROJ_SPATIAL_CRITERION_PARTIAL_INTERSECTION);
+    PJ_OBJ_LIST *operations =
+        proj_create_operations(m_ctxt, compound, geog_crs, ctxt);
+    ASSERT_NE(operations, nullptr);
+    ObjListKeeper keeper_operations(operations);
+    EXPECT_GE(proj_list_get_count(operations), 1);
+    auto P = proj_list_get(m_ctxt, operations, 0);
+    ObjectKeeper keeper_transform(P);
 
     auto name = proj_get_name(P);
     ASSERT_TRUE(name != nullptr);
@@ -4395,10 +4767,13 @@ TEST_F(CApi, proj_create_vertical_crs_ex_with_geog_crs) {
     ObjectKeeper keeper_compound_from_projjson(compound_from_projjson);
     ASSERT_NE(compound_from_projjson, nullptr);
 
-    auto P2 = proj_create_crs_to_crs_from_pj(m_ctxt, compound_from_projjson,
-                                             geog_crs, nullptr, nullptr);
-    ObjectKeeper keeper_P2(P2);
-    ASSERT_NE(P2, nullptr);
+    PJ_OBJ_LIST *operations2 =
+        proj_create_operations(m_ctxt, compound_from_projjson, geog_crs, ctxt);
+    ASSERT_NE(operations2, nullptr);
+    ObjListKeeper keeper_operations2(operations2);
+    EXPECT_GE(proj_list_get_count(operations2), 1);
+    auto P2 = proj_list_get(m_ctxt, operations2, 0);
+    ObjectKeeper keeper_transform2(P2);
 
     auto name_bis = proj_get_name(P2);
     ASSERT_TRUE(name_bis != nullptr);
@@ -4407,6 +4782,54 @@ TEST_F(CApi, proj_create_vertical_crs_ex_with_geog_crs) {
     auto proj_5_bis = proj_as_proj_string(m_ctxt, P2, PJ_PROJ_5, nullptr);
     ASSERT_NE(proj_5_bis, nullptr);
     EXPECT_EQ(std::string(proj_5_bis), std::string(proj_5));
+}
+
+// ---------------------------------------------------------------------------
+
+TEST_F(CApi, proj_create_vertical_crs_ex_implied_accuracy) {
+
+    PJ *crsH = proj_create(m_ctxt, "EPSG:4283"); // GDA94
+    ASSERT_NE(crsH, nullptr);
+    ObjectKeeper keeper_crsH(crsH);
+    PJ *crsV = proj_create(m_ctxt, "EPSG:5711"); // AHD height
+    ASSERT_NE(crsV, nullptr);
+    ObjectKeeper keeper_crsV(crsV);
+    PJ *crsGeoid = proj_create(m_ctxt, "EPSG:4939"); // GDA94 3D
+    ASSERT_NE(crsGeoid, nullptr);
+    ObjectKeeper keeper_crsGeoid(crsGeoid);
+
+    PJ *vertDatum = proj_crs_get_datum(m_ctxt, crsV);
+    ObjectKeeper keeper_vertDatum(vertDatum);
+    const char *vertDatumName = proj_get_name(vertDatum);
+    const char *vertDatumAuthority = proj_get_id_auth_name(vertDatum, 0);
+    const char *vertDatumCode = proj_get_id_code(vertDatum, 0);
+    PJ *crsVGeoid = proj_create_vertical_crs_ex(
+        m_ctxt, "Vertical", vertDatumName, vertDatumAuthority, vertDatumCode,
+        "metre", 1.0, "PROJ au_ga_AUSGeoid09_V1.01.tif", nullptr, nullptr,
+        crsGeoid, nullptr);
+    ObjectKeeper keeper_crsVGeoid(crsVGeoid);
+    PJ *crsCompoundGeoid = proj_create_compound_crs(
+        m_ctxt, "Compound with geoid", crsH, crsVGeoid);
+    ObjectKeeper keeper_crsCompoundGeoid(crsCompoundGeoid);
+
+    PJ_OPERATION_FACTORY_CONTEXT *ctxt =
+        proj_create_operation_factory_context(m_ctxt, nullptr);
+    ASSERT_NE(ctxt, nullptr);
+    ContextKeeper keeper_ctxt(ctxt);
+    proj_operation_factory_context_set_grid_availability_use(
+        m_ctxt, ctxt, PROJ_GRID_AVAILABILITY_IGNORED);
+    proj_operation_factory_context_set_spatial_criterion(
+        m_ctxt, ctxt, PROJ_SPATIAL_CRITERION_PARTIAL_INTERSECTION);
+    PJ_OBJ_LIST *operations =
+        proj_create_operations(m_ctxt, crsCompoundGeoid, crsGeoid, ctxt);
+    ASSERT_NE(operations, nullptr);
+    ObjListKeeper keeper_operations(operations);
+    EXPECT_GE(proj_list_get_count(operations), 1);
+    PJ *transform = proj_list_get(m_ctxt, operations, 0);
+    ObjectKeeper keeper_transform(transform);
+
+    // This is the accuracy of operations EPSG:5656 / 5657
+    ASSERT_EQ(proj_coordoperation_get_accuracy(m_ctxt, transform), 0.15);
 }
 
 // ---------------------------------------------------------------------------
@@ -4517,6 +4940,51 @@ TEST_F(CApi, proj_context_set_sqlite3_vfs_name) {
 
 // ---------------------------------------------------------------------------
 
+TEST_F(CApi, proj_context_set_sqlite3_vfs_name__from_global_context) {
+
+    // Set a dummy VFS and check it is taken into account
+    // (failure to open proj.db)
+    proj_context_set_sqlite3_vfs_name(nullptr, "dummy_vfs_name");
+
+    PJ_CONTEXT *ctx = proj_context_create();
+    proj_log_func(ctx, nullptr, [](void *, int, const char *) -> void {});
+
+    ASSERT_EQ(proj_create(ctx, "EPSG:4326"), nullptr);
+
+    // Restore default VFS
+    proj_context_set_sqlite3_vfs_name(nullptr, nullptr);
+    proj_context_destroy(ctx);
+}
+
+// ---------------------------------------------------------------------------
+
+TEST_F(CApi, use_proj4_init_rules) {
+    PJ_CONTEXT *ctx = proj_context_create();
+    proj_context_use_proj4_init_rules(ctx, true);
+    ASSERT_TRUE(proj_context_get_use_proj4_init_rules(ctx, true));
+    proj_context_use_proj4_init_rules(ctx, false);
+    ASSERT_TRUE(!proj_context_get_use_proj4_init_rules(ctx, true));
+    proj_context_destroy(ctx);
+}
+
+// ---------------------------------------------------------------------------
+
+TEST_F(CApi, use_proj4_init_rules_from_global_context) {
+
+    int initial_rules = proj_context_get_use_proj4_init_rules(nullptr, true);
+    proj_context_use_proj4_init_rules(nullptr, true);
+    PJ_CONTEXT *ctx = proj_context_create();
+    ASSERT_TRUE(proj_context_get_use_proj4_init_rules(ctx, true));
+    proj_context_destroy(ctx);
+    proj_context_use_proj4_init_rules(nullptr, false);
+    ctx = proj_context_create();
+    ASSERT_TRUE(!proj_context_get_use_proj4_init_rules(ctx, true));
+    proj_context_destroy(ctx);
+    proj_context_use_proj4_init_rules(nullptr, initial_rules);
+}
+
+// ---------------------------------------------------------------------------
+
 TEST_F(CApi, proj_is_equivalent_to_with_ctx) {
     auto from_epsg = proj_create_from_database(m_ctxt, "EPSG", "7844",
                                                PJ_CATEGORY_CRS, false, nullptr);
@@ -4543,6 +5011,104 @@ TEST_F(CApi, proj_is_equivalent_to_with_ctx) {
 
     EXPECT_TRUE(proj_is_equivalent_to_with_ctx(m_ctxt, from_epsg, from_wkt,
                                                PJ_COMP_EQUIVALENT));
+}
+
+// ---------------------------------------------------------------------------
+
+TEST_F(CApi, datum_ensemble) {
+    auto wkt =
+        "GEOGCRS[\"ETRS89\","
+        "    ENSEMBLE[\"European Terrestrial Reference System 1989 ensemble\","
+        "        MEMBER[\"European Terrestrial Reference Frame 1989\"],"
+        "        MEMBER[\"European Terrestrial Reference Frame 1990\"],"
+        "        MEMBER[\"European Terrestrial Reference Frame 1991\"],"
+        "        MEMBER[\"European Terrestrial Reference Frame 1992\"],"
+        "        MEMBER[\"European Terrestrial Reference Frame 1993\"],"
+        "        MEMBER[\"European Terrestrial Reference Frame 1994\"],"
+        "        MEMBER[\"European Terrestrial Reference Frame 1996\"],"
+        "        MEMBER[\"European Terrestrial Reference Frame 1997\"],"
+        "        MEMBER[\"European Terrestrial Reference Frame 2000\"],"
+        "        MEMBER[\"European Terrestrial Reference Frame 2005\"],"
+        "        MEMBER[\"European Terrestrial Reference Frame 2014\"],"
+        "        ELLIPSOID[\"GRS 1980\",6378137,298.257222101,"
+        "            LENGTHUNIT[\"metre\",1]],"
+        "        ENSEMBLEACCURACY[0.1]],"
+        "    PRIMEM[\"Greenwich\",0,"
+        "        ANGLEUNIT[\"degree\",0.0174532925199433]],"
+        "    CS[ellipsoidal,2],"
+        "        AXIS[\"geodetic latitude (Lat)\",north,"
+        "            ORDER[1],"
+        "            ANGLEUNIT[\"degree\",0.0174532925199433]],"
+        "        AXIS[\"geodetic longitude (Lon)\",east,"
+        "            ORDER[2],"
+        "            ANGLEUNIT[\"degree\",0.0174532925199433]]]";
+    auto from_wkt =
+        proj_create_from_wkt(m_ctxt, wkt, nullptr, nullptr, nullptr);
+    ObjectKeeper keeper_from_wkt(from_wkt);
+    EXPECT_NE(from_wkt, nullptr);
+
+    auto datum = proj_crs_get_datum(m_ctxt, from_wkt);
+    ObjectKeeper keeper_datum(datum);
+    ASSERT_EQ(datum, nullptr);
+
+    auto datum_ensemble = proj_crs_get_datum_ensemble(m_ctxt, from_wkt);
+    ObjectKeeper keeper_datum_ensemble(datum_ensemble);
+    ASSERT_NE(datum_ensemble, nullptr);
+
+    ASSERT_EQ(proj_datum_ensemble_get_member_count(m_ctxt, datum_ensemble), 11);
+    ASSERT_EQ(proj_datum_ensemble_get_member(m_ctxt, datum_ensemble, -1),
+              nullptr);
+    ASSERT_EQ(proj_datum_ensemble_get_member(m_ctxt, datum_ensemble, 11),
+              nullptr);
+
+    {
+        auto member = proj_datum_ensemble_get_member(m_ctxt, datum_ensemble, 0);
+        ObjectKeeper keeper_member(member);
+        ASSERT_NE(member, nullptr);
+
+        EXPECT_EQ(proj_get_name(member),
+                  std::string("European Terrestrial Reference Frame 1989"));
+    }
+
+    {
+        auto member =
+            proj_datum_ensemble_get_member(m_ctxt, datum_ensemble, 10);
+        ObjectKeeper keeper_member(member);
+        ASSERT_NE(member, nullptr);
+
+        EXPECT_EQ(proj_get_name(member),
+                  std::string("European Terrestrial Reference Frame 2014"));
+    }
+
+    ASSERT_EQ(proj_datum_ensemble_get_accuracy(m_ctxt, datum_ensemble), 0.1);
+
+    auto datum_forced = proj_crs_get_datum_forced(m_ctxt, from_wkt);
+    ObjectKeeper keeper_datum_forced(datum_forced);
+    ASSERT_NE(datum_forced, nullptr);
+
+    EXPECT_EQ(proj_get_name(datum_forced),
+              std::string("European Terrestrial Reference System 1989"));
+
+    auto cs = proj_crs_get_coordinate_system(m_ctxt, from_wkt);
+    ObjectKeeper keeper_cs(cs);
+    EXPECT_NE(cs, nullptr);
+
+    {
+        auto built_crs = proj_create_geographic_crs_from_datum(
+            m_ctxt, proj_get_name(from_wkt), datum_ensemble, cs);
+        ObjectKeeper keeper_built_crs(built_crs);
+        EXPECT_NE(built_crs, nullptr);
+
+        EXPECT_TRUE(proj_is_equivalent_to_with_ctx(m_ctxt, built_crs, from_wkt,
+                                                   PJ_COMP_EQUIVALENT));
+    }
+
+    {
+        auto built_crs = proj_create_geocentric_crs_from_datum(
+            m_ctxt, proj_get_name(from_wkt), datum_ensemble, "metre", 1.0);
+        ObjectKeeper keeper_built_crs(built_crs);
+        EXPECT_NE(built_crs, nullptr);
+    }
 }
 
 } // namespace

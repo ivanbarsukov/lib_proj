@@ -53,6 +53,7 @@ endif()
 
 set(SRC_LIBPROJ_PROJECTIONS
   projections/aeqd.cpp
+  projections/adams.cpp
   projections/gnom.cpp
   projections/laea.cpp
   projections/mod_ster.cpp
@@ -130,6 +131,7 @@ set(SRC_LIBPROJ_PROJECTIONS
   projections/gn_sinu.cpp
   projections/goode.cpp
   projections/igh.cpp
+  projections/igh_o.cpp
   projections/hatano.cpp
   projections/loxim.cpp
   projections/mbt_fps.cpp
@@ -159,6 +161,7 @@ set(SRC_LIBPROJ_PROJECTIONS
   projections/natearth2.cpp
   projections/calcofi.cpp
   projections/eqearth.cpp
+  projections/col_urban.cpp
 )
 
 set(SRC_LIBPROJ_CONVERSIONS
@@ -180,6 +183,8 @@ set(SRC_LIBPROJ_TRANSFORMATIONS
   transformations/molodensky.cpp
   transformations/vgridshift.cpp
   transformations/xyzgridshift.cpp
+  transformations/defmodel.cpp
+  transformations/tinshift.cpp
 )
 
 set(SRC_LIBPROJ_ISO19111
@@ -190,11 +195,20 @@ set(SRC_LIBPROJ_ISO19111
   iso19111/crs.cpp
   iso19111/datum.cpp
   iso19111/coordinatesystem.cpp
-  iso19111/coordinateoperation.cpp
   iso19111/io.cpp
   iso19111/internal.cpp
   iso19111/factory.cpp
   iso19111/c_api.cpp
+  iso19111/operation/concatenatedoperation.cpp
+  iso19111/operation/coordinateoperationfactory.cpp
+  iso19111/operation/conversion.cpp
+  iso19111/operation/esriparammappings.cpp
+  iso19111/operation/oputils.cpp
+  iso19111/operation/parammappings.cpp
+  iso19111/operation/projbasedoperation.cpp
+  iso19111/operation/singleoperation.cpp
+  iso19111/operation/transformation.cpp
+  iso19111/operation/vectorofvaluesparams.cpp
 )
 
 set(SRC_LIBPROJ_CORE
@@ -214,8 +228,7 @@ set(SRC_LIBPROJ_CORE
   fileapi.cpp
   fwd.cpp
   gauss.cpp
-  geocent.cpp
-  geocent.h
+  generic_inverse.cpp
   geodesic.c
   init.cpp
   initcache.cpp
@@ -301,7 +314,6 @@ set(HEADERS_PUBLIC
   ${CMAKE_SOURCE_DIR}/include/proj/crs.hpp 
   ${CMAKE_SOURCE_DIR}/include/proj/datum.hpp
   ${CMAKE_SOURCE_DIR}/include/proj/coordinatesystem.hpp 
-  ${CMAKE_SOURCE_DIR}/include/proj/coordinateoperation.hpp 
   ${CMAKE_SOURCE_DIR}/include/proj/io.hpp 
   ${CMAKE_SOURCE_DIR}/include/proj/nn.hpp
 )

@@ -111,7 +111,7 @@ int main(int argc, char *argv[]) {
     auto ctx = pj_get_default_ctx();
 
     std::string targetDir;
-    std::string endpoint(pj_context_get_url_endpoint(ctx));
+    std::string endpoint(proj_context_get_url_endpoint(ctx));
     const std::string geojsonFile("files.geojson");
     std::string queriedSourceId;
     std::string queriedAreaOfUse;
@@ -224,7 +224,7 @@ int main(int argc, char *argv[]) {
     }
 
     if (targetDir.empty()) {
-        targetDir = pj_context_get_user_writable_directory(ctx, true);
+        targetDir = proj_context_get_user_writable_directory(ctx, true);
     } else {
         if (targetDir.back() == '/') {
             targetDir.resize(targetDir.size() - 1);
@@ -238,7 +238,7 @@ int main(int argc, char *argv[]) {
         endpoint.resize(endpoint.size() - 1);
     }
 
-    if (!quiet) {
+    if (!quiet && !listFiles) {
         std::cout << "Downloading from " << endpoint << " into " << targetDir
                   << std::endl;
     }
@@ -294,7 +294,8 @@ int main(int argc, char *argv[]) {
         }
         std::vector<std::string> to_download;
         unsigned long long total_size_to_download = 0;
-        for (const auto feat : j["features"]) {
+        const auto features = j["features"];
+        for (const auto &feat : features) {
             if (!feat.is_object()) {
                 continue;
             }
@@ -341,12 +342,6 @@ int main(int argc, char *argv[]) {
                 if (j_file_size.type() == json::value_t::number_unsigned) {
                     file_size = j_file_size.get<unsigned long long>();
                 }
-            }
-
-            if (listFiles) {
-                std::cout << name << "," << area_of_use << "," << source_id
-                          << "," << file_size << std::endl;
-                continue;
             }
 
             const bool matchSourceId =
@@ -411,7 +406,7 @@ int main(int argc, char *argv[]) {
                         std::vector<std::vector<double>> grid_bboxes;
                         bool foundMinus180 = false;
                         bool foundPlus180 = false;
-                        for (const auto obj : j_coordinates) {
+                        for (const auto &obj : j_coordinates) {
                             if (obj.is_array()) {
                                 const auto tmp = get_bbox(obj);
                                 if (tmp.size() == 4) {
@@ -478,7 +473,14 @@ int main(int argc, char *argv[]) {
                 } while (false);
             }
 
-            if (matchFile & matchSourceId && matchAreaOfUse && matchBbox) {
+            if (matchFile && matchSourceId && matchAreaOfUse && matchBbox) {
+
+                if (listFiles) {
+                    std::cout << name << "," << area_of_use << "," << source_id
+                              << "," << file_size << std::endl;
+                    continue;
+                }
+
                 const std::string resource_url(endpoint + '/' + name);
                 if (proj_is_download_needed(ctx, resource_url.c_str(), false)) {
                     total_size_to_download += file_size;
@@ -492,7 +494,7 @@ int main(int argc, char *argv[]) {
             }
         }
 
-        if (!quiet && total_size_to_download > 0) {
+        if (!quiet && !listFiles && total_size_to_download > 0) {
             if (total_size_to_download > 1024 * 1024)
                 std::cout << "Total size to download: "
                           << total_size_to_download / (1024 * 1024) << " MB"

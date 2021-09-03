@@ -38,10 +38,11 @@
 
 #include "proj.h"
 
-#include "proj_json_streaming_writer.hpp"
 #include "util.hpp"
 
 NS_PROJ_START
+
+class CPLJSonStreamingWriter;
 
 namespace common {
 class UnitOfMeasure;
@@ -69,6 +70,10 @@ namespace datum {
 class Datum;
 using DatumPtr = std::shared_ptr<Datum>;
 using DatumNNPtr = util::nn<DatumPtr>;
+
+class DatumEnsemble;
+using DatumEnsemblePtr = std::shared_ptr<DatumEnsemble>;
+using DatumEnsembleNNPtr = util::nn<DatumEnsemblePtr>;
 
 class Ellipsoid;
 using EllipsoidPtr = std::shared_ptr<Ellipsoid>;
@@ -251,6 +256,8 @@ class PROJ_GCC_DLL WKTFormatter {
     PROJ_INTERNAL void startNode(const std::string &keyword, bool hasId);
     PROJ_INTERNAL void endNode();
 
+    PROJ_INTERNAL bool isAtTopLevel() const;
+
     PROJ_DLL WKTFormatter &simulCurNodeHasId();
 
     PROJ_INTERNAL void addQuotedString(const char *str);
@@ -335,6 +342,10 @@ class PROJ_GCC_DLL WKTFormatter {
 
     PROJ_INTERNAL void ingestWKTNode(const WKTNodeNNPtr &node);
 
+    PROJ_INTERNAL WKTFormatter &
+    setAllowEllipsoidalHeightAsVerticalCRS(bool allow) noexcept;
+    PROJ_INTERNAL bool isAllowedEllipsoidalHeightAsVerticalCRS() const noexcept;
+
     //! @endcond
 
   protected:
@@ -379,6 +390,10 @@ class PROJ_GCC_DLL PROJStringFormatter {
     //! @cond Doxygen_Suppress
     PROJ_DLL ~PROJStringFormatter();
     //! @endcond
+
+    PROJ_DLL PROJStringFormatter &setMultiLine(bool multiLine) noexcept;
+    PROJ_DLL PROJStringFormatter &setIndentationWidth(int width) noexcept;
+    PROJ_DLL PROJStringFormatter &setMaxLineLength(int maxLineLength) noexcept;
 
     PROJ_DLL void setUseApproxTMerc(bool flag);
 
@@ -438,6 +453,10 @@ class PROJ_GCC_DLL PROJStringFormatter {
     PROJ_INTERNAL void popOmitZUnitConversion();
     PROJ_INTERNAL bool omitZUnitConversion() const;
 
+    PROJ_INTERNAL void pushOmitHorizontalConversionInVertTransformation();
+    PROJ_INTERNAL void popOmitHorizontalConversionInVertTransformation();
+    PROJ_INTERNAL bool omitHorizontalConversionInVertTransformation() const;
+
     PROJ_INTERNAL void setLegacyCRSToCRSContext(bool legacyContext);
     PROJ_INTERNAL bool getLegacyCRSToCRSContext() const;
 
@@ -490,7 +509,7 @@ class PROJ_GCC_DLL JSONFormatter {
     PROJ_PRIVATE :
 
         //! @cond Doxygen_Suppress
-        PROJ_INTERNAL CPLJSonStreamingWriter &
+        PROJ_INTERNAL CPLJSonStreamingWriter *
         writer() const;
 
     struct ObjectContext {
@@ -868,6 +887,10 @@ class PROJ_GCC_DLL DatabaseContext {
     getNonDeprecated(const std::string &tableName, const std::string &authName,
                      const std::string &code) const;
 
+    PROJ_INTERNAL static std::vector<operation::CoordinateOperationNNPtr>
+    getTransformationsForGridName(const DatabaseContextNNPtr &databaseContext,
+                                  const std::string &gridName);
+
     //! @endcond
 
   protected:
@@ -920,6 +943,10 @@ class PROJ_GCC_DLL AuthorityFactory {
     createEllipsoid(const std::string &code) const;
 
     PROJ_DLL datum::DatumNNPtr createDatum(const std::string &code) const;
+
+    PROJ_DLL datum::DatumEnsembleNNPtr
+    createDatumEnsemble(const std::string &code,
+                        const std::string &type = std::string()) const;
 
     PROJ_DLL datum::GeodeticReferenceFrameNNPtr
     createGeodeticDatum(const std::string &code) const;
@@ -1005,6 +1032,10 @@ class PROJ_GCC_DLL AuthorityFactory {
         /** Object of type operation::ConcatenatedOperation (and derived
            classes) */
         CONCATENATED_OPERATION,
+        /** Object of type datum::DynamicGeodeticReferenceFrame */
+        DYNAMIC_GEODETIC_REFERENCE_FRAME,
+        /** Object of type datum::DynamicVerticalReferenceFrame */
+        DYNAMIC_VERTICAL_REFERENCE_FRAME,
     };
 
     PROJ_DLL std::set<std::string>
@@ -1012,6 +1043,8 @@ class PROJ_GCC_DLL AuthorityFactory {
                       bool allowDeprecated = true) const;
 
     PROJ_DLL std::string getDescriptionText(const std::string &code) const;
+
+    // non-standard
 
     /** CRS information */
     struct CRSInfo {
@@ -1049,7 +1082,33 @@ class PROJ_GCC_DLL AuthorityFactory {
 
     PROJ_DLL std::list<CRSInfo> getCRSInfoList() const;
 
-    // non-standard
+    /** Unit information */
+    struct UnitInfo {
+        /** Authority name */
+        std::string authName;
+        /** Code */
+        std::string code;
+        /** Name */
+        std::string name;
+        /** Category: one of "linear", "linear_per_time", "angular",
+         * "angular_per_time", "scale", "scale_per_time" or "time" */
+        std::string category;
+        /** Conversion factor to the SI unit.
+         * It might be 0 in some cases to indicate no known conversion factor.
+         */
+        double convFactor;
+        /** PROJ short name (may be empty) */
+        std::string projShortName;
+        /** Whether the object is deprecated */
+        bool deprecated;
+
+        //! @cond Doxygen_Suppress
+        UnitInfo();
+        //! @endcond
+    };
+
+    PROJ_DLL std::list<UnitInfo> getUnitList() const;
+
     PROJ_DLL static AuthorityFactoryNNPtr
     create(const DatabaseContextNNPtr &context,
            const std::string &authorityName);
@@ -1142,6 +1201,15 @@ class PROJ_GCC_DLL AuthorityFactory {
         const std::vector<std::string> &allowedAuthorities,
         const metadata::ExtentPtr &intersectingExtent1,
         const metadata::ExtentPtr &intersectingExtent2) const;
+
+    typedef std::pair<common::IdentifiedObjectNNPtr, std::string>
+        PairObjectName;
+    PROJ_INTERNAL std::list<PairObjectName>
+    createObjectsFromNameEx(const std::string &name,
+                            const std::vector<ObjectType> &allowedObjectTypes =
+                                std::vector<ObjectType>(),
+                            bool approximateMatch = true,
+                            size_t limitResultCount = 0) const;
 
     //! @endcond
 

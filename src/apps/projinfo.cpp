@@ -71,6 +71,7 @@ struct OutputOptions {
     bool c_ify = false;
     bool singleLine = false;
     bool strict = true;
+    bool ballparkAllowed = true;
 };
 } // anonymous namespace
 
@@ -89,18 +90,18 @@ static void usage() {
         << std::endl
         << "                [--grid-check "
            "none|discard_missing|sort|known_available] "
-           "[--show-superseded]"
         << std::endl
         << "                [--pivot-crs always|if_no_direct_transformation|"
         << "never|{auth:code[,auth:code]*}]" << std::endl
+        << "                [--show-superseded] [--hide-ballpark]" << std::endl
         << "                [--boundcrs-to-wgs84]" << std::endl
         << "                [--main-db-path path] [--aux-db-path path]*"
         << std::endl
         << "                [--identify] [--3d]" << std::endl
         << "                [--c-ify] [--single-line]" << std::endl
-        << "                --searchpaths | --remote-data | "
-           "{object_definition} |"
-        << "                (-s {srs_def} -t {srs_def})" << std::endl;
+        << "                --searchpaths | --remote-data |" << std::endl
+        << "                {object_definition} | (-s {srs_def} -t {srs_def})"
+        << std::endl;
     std::cerr << std::endl;
     std::cerr << "-o: formats is a comma separated combination of: "
                  "all,default,PROJ,WKT_ALL,WKT2:2015,WKT2:2019,WKT1:GDAL,"
@@ -329,9 +330,6 @@ static void outputObject(
     if (projStringExportable) {
         if (outputOpt.PROJ5) {
             try {
-                if (alreadyOutputed) {
-                    std::cout << std::endl;
-                }
                 auto crs = nn_dynamic_pointer_cast<CRS>(obj);
                 if (!outputOpt.quiet) {
                     if (crs) {
@@ -352,11 +350,11 @@ static void outputObject(
                     objToExport = projStringExportable;
                 }
 
-                std::cout << objToExport->exportToPROJString(
-                                 PROJStringFormatter::create(
-                                     PROJStringFormatter::Convention::PROJ_5,
-                                     dbContext)
-                                     .get())
+                auto formatter = PROJStringFormatter::create(
+                    PROJStringFormatter::Convention::PROJ_5, dbContext);
+                formatter->setMultiLine(!outputOpt.singleLine &&
+                                        crs == nullptr);
+                std::cout << objToExport->exportToPROJString(formatter.get())
                           << std::endl;
             } catch (const std::exception &e) {
                 std::cerr << "Error when exporting to PROJ string: " << e.what()
@@ -378,9 +376,7 @@ static void outputObject(
                 }
                 auto formatter =
                     WKTFormatter::create(WKTFormatter::Convention::WKT2_2015);
-                if (outputOpt.singleLine) {
-                    formatter->setMultiLine(false);
-                }
+                formatter->setMultiLine(!outputOpt.singleLine);
                 formatter->setStrict(outputOpt.strict);
                 auto wkt = wktExportable->exportToWKT(formatter.get());
                 if (outputOpt.c_ify) {
@@ -481,8 +477,8 @@ static void outputObject(
                     std::cout << "WKT1:GDAL string:" << std::endl;
                 }
 
-                auto formatter =
-                    WKTFormatter::create(WKTFormatter::Convention::WKT1_GDAL);
+                auto formatter = WKTFormatter::create(
+                    WKTFormatter::Convention::WKT1_GDAL, dbContext);
                 if (outputOpt.singleLine) {
                     formatter->setMultiLine(false);
                 }
@@ -554,7 +550,8 @@ static void outputObject(
     }
 
     auto op = dynamic_cast<CoordinateOperation *>(obj.get());
-    if (op && dbContext && getenv("PROJINFO_NO_GRID_CHECK") == nullptr) {
+    if (!outputOpt.quiet && op && dbContext &&
+        getenv("PROJINFO_NO_GRID_CHECK") == nullptr) {
         try {
             auto setGrids = op->gridsNeeded(dbContext, false);
             bool firstWarning = true;
@@ -692,6 +689,7 @@ static void outputOperations(
 
     std::vector<CoordinateOperationNNPtr> list;
     size_t spatialCriterionPartialIntersectionResultCount = 0;
+    bool spatialCriterionPartialIntersectionMoreRelevant = false;
     try {
         auto authFactory =
             dbContext
@@ -707,6 +705,7 @@ static void outputOperations(
         ctxt->setIntermediateCRS(pivots);
         ctxt->setUsePROJAlternativeGridNames(usePROJGridAlternatives);
         ctxt->setDiscardSuperseded(!showSuperseded);
+        ctxt->setAllowBallparkTransformations(outputOpt.ballparkAllowed);
         list = CoordinateOperationFactory::create()->createOperations(
             nnSourceCRS, nnTargetCRS, ctxt);
         if (!spatialCriterionExplicitlySpecified &&
@@ -716,10 +715,15 @@ static void outputOperations(
                 ctxt->setSpatialCriterion(
                     CoordinateOperationContext::SpatialCriterion::
                         PARTIAL_INTERSECTION);
-                spatialCriterionPartialIntersectionResultCount =
-                    CoordinateOperationFactory::create()
-                        ->createOperations(nnSourceCRS, nnTargetCRS, ctxt)
-                        .size();
+                auto list2 =
+                    CoordinateOperationFactory::create()->createOperations(
+                        nnSourceCRS, nnTargetCRS, ctxt);
+                spatialCriterionPartialIntersectionResultCount = list2.size();
+                if (spatialCriterionPartialIntersectionResultCount == 1 &&
+                    list.size() == 1 &&
+                    list2[0]->nameStr() != list[0]->nameStr()) {
+                    spatialCriterionPartialIntersectionMoreRelevant = true;
+                }
             } catch (const std::exception &) {
             }
         }
@@ -737,6 +741,10 @@ static void outputOperations(
         std::cout << "Note: using '--spatial-test intersects' would bring "
                      "more results ("
                   << spatialCriterionPartialIntersectionResultCount << ")"
+                  << std::endl;
+    } else if (spatialCriterionPartialIntersectionMoreRelevant) {
+        std::cout << "Note: using '--spatial-test intersects' would bring "
+                     "more relevant results."
                   << std::endl;
     }
     if (summary) {
@@ -1056,6 +1064,8 @@ int main(int argc, char **argv) {
             showSuperseded = true;
         } else if (arg == "--lax") {
             outputOpt.strict = false;
+        } else if (arg == "--hide-ballpark") {
+            outputOpt.ballparkAllowed = false;
         } else if (ci_equal(arg, "--3d")) {
             promoteTo3D = true;
         } else if (ci_equal(arg, "--searchpaths")) {
@@ -1073,7 +1083,7 @@ int main(int argc, char **argv) {
 #ifdef CURL_ENABLED
             if (proj_context_is_network_enabled(nullptr)) {
                 std::cout << "Status: enabled" << std::endl;
-                std::cout << "URL: " << pj_context_get_url_endpoint(nullptr)
+                std::cout << "URL: " << proj_context_get_url_endpoint(nullptr)
                           << std::endl;
             } else {
                 std::cout << "Status: disabled" << std::endl;
@@ -1145,8 +1155,10 @@ int main(int argc, char **argv) {
     }
 
     if (outputOpt.quiet &&
-        (outputOpt.PROJ5 + outputOpt.WKT2_2019 + outputOpt.WKT2_2015 +
-         outputOpt.WKT1_GDAL + outputOpt.PROJJSON) != 1) {
+        (outputOpt.PROJ5 + outputOpt.WKT2_2019 +
+         outputOpt.WKT2_2019_SIMPLIFIED + outputOpt.WKT2_2015 +
+         outputOpt.WKT2_2015_SIMPLIFIED + outputOpt.WKT1_GDAL +
+         outputOpt.WKT1_ESRI + outputOpt.PROJJSON) != 1) {
         std::cerr << "-q can only be used with a single output format"
                   << std::endl;
         usage();
@@ -1196,26 +1208,48 @@ int main(int argc, char **argv) {
                                 std::cout << *ids[0]->codeSpace() << ":"
                                           << ids[0]->code() << ": "
                                           << pair.second << " %" << std::endl;
-                            } else {
-                                auto boundCRS = dynamic_cast<BoundCRS *>(
-                                    identifiedCRS.get());
-                                if (boundCRS &&
-                                    !boundCRS->baseCRS()
-                                         ->identifiers()
-                                         .empty()) {
-                                    const auto &idsBase =
-                                        boundCRS->baseCRS()->identifiers();
-                                    std::cout << "BoundCRS of "
-                                              << *idsBase[0]->codeSpace() << ":"
-                                              << idsBase[0]->code() << ": "
-                                              << pair.second << " %"
-                                              << std::endl;
-                                } else {
-                                    std::cout
-                                        << "un-identifier CRS: " << pair.second
-                                        << " %" << std::endl;
+                                continue;
+                            }
+
+                            auto boundCRS =
+                                dynamic_cast<BoundCRS *>(identifiedCRS.get());
+                            if (boundCRS &&
+                                !boundCRS->baseCRS()->identifiers().empty()) {
+                                const auto &idsBase =
+                                    boundCRS->baseCRS()->identifiers();
+                                std::cout << "BoundCRS of "
+                                          << *idsBase[0]->codeSpace() << ":"
+                                          << idsBase[0]->code() << ": "
+                                          << pair.second << " %" << std::endl;
+                                continue;
+                            }
+
+                            auto compoundCRS = dynamic_cast<CompoundCRS *>(
+                                identifiedCRS.get());
+                            if (compoundCRS) {
+                                const auto &components =
+                                    compoundCRS->componentReferenceSystems();
+                                if (components.size() == 2 &&
+                                    !components[0]->identifiers().empty() &&
+                                    !components[1]->identifiers().empty()) {
+                                    const auto &idH =
+                                        components[0]->identifiers().front();
+                                    const auto &idV =
+                                        components[1]->identifiers().front();
+                                    if (*idH->codeSpace() ==
+                                        *idV->codeSpace()) {
+                                        std::cout << *idH->codeSpace() << ":"
+                                                  << idH->code() << '+'
+                                                  << idV->code() << ": "
+                                                  << pair.second << " %"
+                                                  << std::endl;
+                                        continue;
+                                    }
                                 }
                             }
+
+                            std::cout << "un-identified CRS: " << pair.second
+                                      << " %" << std::endl;
                         }
                     } catch (const std::exception &e) {
                         std::cerr << "Identification failed: " << e.what()
