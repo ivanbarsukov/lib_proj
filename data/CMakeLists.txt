@@ -28,6 +28,10 @@ set(GRIDSHIFT_FILES ${GSB_FILES} ${GTX_FILES})
 
 option(GENERATE_PROJ_DB "Build proj.db file" OFF)
 
+file(GLOB SCHEMA_FILES *.json)
+
+set(PROJ_DB "${CMAKE_CURRENT_SOURCE_DIR}/proj.db")
+
 if(GENERATE_PROJ_DB)
 
     find_exthost_program(EXE_SQLITE3 sqlite3)
@@ -40,42 +44,65 @@ if(GENERATE_PROJ_DB)
     include(sql_filelist.cmake)
 
     add_custom_command(
-    OUTPUT ${ALL_SQL_IN}
-    COMMAND ${CMAKE_COMMAND} "-DALL_SQL_IN=${ALL_SQL_IN}"
-        -P "${CMAKE_CURRENT_SOURCE_DIR}/generate_all_sql_in.cmake"
-    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
-    DEPENDS ${SQL_FILES}
-    COMMENT "Generating all.sql.in"
-    VERBATIM
+        OUTPUT ${PROJ_DB}
+        COMMAND ${CMAKE_COMMAND} -E remove -f ${PROJ_DB}
+        COMMAND ${CMAKE_COMMAND} "-DALL_SQL_IN=${ALL_SQL_IN}" "-DEXE_SQLITE3=${EXE_SQLITE3}" "-DPROJ_DB=${PROJ_DB}" "-DPROJ_VERSION=${PROJ_VERSION}"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/generate_proj_db.cmake"
+        COMMAND ${CMAKE_COMMAND} -E copy ${PROJ_DB} ${CMAKE_CURRENT_BINARY_DIR}/for_tests
+        DEPENDS ${SQL_FILES} "${CMAKE_CURRENT_SOURCE_DIR}/generate_proj_db.cmake"
+        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+        COMMENT "Generating proj.db"
+        VERBATIM
     )
-
-    add_custom_target(generate_all_sql_in ALL DEPENDS ${ALL_SQL_IN})
-
-    add_custom_command(
-    OUTPUT ${PROJ_DB}
-    COMMAND ${CMAKE_COMMAND} -E remove -f ${PROJ_DB}
-    COMMAND ${EXE_SQLITE3} -init ${ALL_SQL_IN} ${PROJ_DB} .quit
-    # note: we didn't port yet the foreign_key_check done in Makefile.am
-    DEPENDS generate_all_sql_in ${ALL_SQL_IN}
-    COMMENT "Generating proj.db"
-    VERBATIM
-    )
-
     add_custom_target(generate_proj_db ALL DEPENDS ${PROJ_DB})
-
 else()
-    if(NOT EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/proj.db)
-        message(FATAL_ERROR "proj.db not found")
-    endif()
+    file(COPY ${PROJ_DB} DESTINATION ${CMAKE_CURRENT_BINARY_DIR}/for_tests)
+endif(GENERATE_PROJ_DB)
 
-    set(PROJ_DB ${CMAKE_CURRENT_SOURCE_DIR}/proj.db)
-endif()
 
 if(NOT "${CMAKE_CURRENT_SOURCE_DIR}" STREQUAL "${CMAKE_CURRENT_BINARY_DIR}")
-  foreach(FILE ${PROJ_DICTIONARY} ${GRIDSHIFT_FILES})
-    configure_file(${FILE} ${FILE} COPYONLY)
-  endforeach()
+    foreach(FILE ${CONFIG_FILES} ${PROJ_DICTIONARY} ${GRIDSHIFT_FILES})
+        configure_file(${FILE} ${FILE} COPYONLY)
+    endforeach()
 endif()
+
+
+  # Copy select resource files in a for_tests subdirectory so that we are not
+  # influenced by the presence of other grids
+  # Note: this is done at configure/cmake time, not build time.
+  # So if you install new grids in the source data/ subdirectory, run cmake again
+  set(DATA_FOR_TESTS
+      GL27
+      nad27
+      nad83
+      ITRF2000)
+  
+  execute_process(COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_CURRENT_BINARY_DIR}/for_tests)
+  execute_process(COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_CURRENT_BINARY_DIR}/for_tests/tests)
+  
+  foreach(FILE ${DATA_FOR_TESTS} ${CONFIG_FILES})
+      configure_file(${CMAKE_CURRENT_SOURCE_DIR}/${FILE} ${CMAKE_CURRENT_BINARY_DIR}/for_tests/${FILE} COPYONLY)
+  endforeach()
+  
+  file(GLOB DATA_TESTS tests/*)
+  foreach(FILE ${DATA_TESTS})
+      get_filename_component(FILENAME ${FILE} NAME)
+      configure_file(${FILE} ${CMAKE_CURRENT_BINARY_DIR}/for_tests/tests/${FILENAME} COPYONLY)
+  endforeach()
+  
+  set(DATA_FOR_TESTS_FROM_TESTS_SUBDIR
+      alaska
+      BETA2007.gsb
+      conus
+      MD
+      ntf_r93.gsb
+      ntv1_can.dat)
+  foreach(FILE ${DATA_FOR_TESTS_FROM_TESTS_SUBDIR})
+      configure_file(${CMAKE_CURRENT_SOURCE_DIR}/tests/${FILE} ${CMAKE_CURRENT_BINARY_DIR}/for_tests/${FILE} COPYONLY)
+  endforeach()
+  configure_file(${CMAKE_CURRENT_SOURCE_DIR}/tests/egm96_15_downsampled.gtx ${CMAKE_CURRENT_BINARY_DIR}/for_tests/egm96_15.gtx COPYONLY)
+  configure_file(${CMAKE_CURRENT_SOURCE_DIR}/tests/ntv2_0_downsampled.gsb ${CMAKE_CURRENT_BINARY_DIR}/for_tests/ntv2_0.gsb COPYONLY)
+  
 
 #
 #install
@@ -85,6 +112,7 @@ set(ALL_DATA_FILE
   ${PROJ_DICTIONARY}
   ${GRIDSHIFT_FILES}
   ${PROJ_DB}
+  ${SCHEMA_FILES}
 )
 
 if(OSX_FRAMEWORK)

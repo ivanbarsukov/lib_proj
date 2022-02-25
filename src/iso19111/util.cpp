@@ -81,6 +81,17 @@ BaseObjectNNPtr::~BaseObjectNNPtr() = default;
 
 // ---------------------------------------------------------------------------
 
+//! @cond Doxygen_Suppress
+// cppcheck-suppress operatorEqVarError
+BaseObject &BaseObject::operator=(BaseObject &&) {
+    d->self_.reset();
+    return *this;
+}
+
+//! @endcond
+
+// ---------------------------------------------------------------------------
+
 /** Keep a reference to ourselves as an internal weak pointer. So that
  * extractGeographicBaseObject() can later return a shared pointer on itself.
  */
@@ -286,9 +297,10 @@ const BaseObjectNNPtr *PropertyMap::get(const std::string &key) const {
 
 //! @cond Doxygen_Suppress
 void PropertyMap::unset(const std::string &key) {
-    for (auto iter = d->list_.begin(); iter != d->list_.end(); ++iter) {
+    auto &list = d->list_;
+    for (auto iter = list.begin(); iter != list.end(); ++iter) {
         if (iter->first == key) {
-            d->list_.erase(iter);
+            list.erase(iter);
             return;
         }
     }
@@ -686,7 +698,7 @@ IComparable::~IComparable() = default;
 
 /** \brief Returns whether an object is equivalent to another one.
  * @param other other object to compare to
- * @param criterion comparaison criterion.
+ * @param criterion comparison criterion.
  * @param dbContext Database context, or nullptr.
  * @return true if objects are equivalent.
  */

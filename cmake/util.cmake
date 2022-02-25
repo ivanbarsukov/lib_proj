@@ -26,9 +26,9 @@
 
 function(check_version major minor patch)
 
-    set(VERSION_FILE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/src/proj.h")
+    set(VERSION_FILE "${CMAKE_CURRENT_SOURCE_DIR}/src/proj.h")
     # Read version information from configure.ac.
-    file(READ "${VERSION_FILE_PATH}" PROJ_H_CONTENTS)
+    file(READ "${VERSION_FILE}" PROJ_H_CONTENTS)
 
    string(REGEX MATCH "PROJ_VERSION_MAJOR[ \t]+([0-9]+)"
       PROJ_VERSION_MAJOR ${PROJ_H_CONTENTS})
@@ -144,7 +144,7 @@ function(get_compiler_version ver)
     endif()
     
     # debug
-    # set(COMPILER Clang-9.0)
+    set(COMPILER Clang-10.0)
 
     set(${ver} ${COMPILER} PARENT_SCOPE)
 endfunction()

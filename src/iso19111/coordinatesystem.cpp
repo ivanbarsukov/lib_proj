@@ -40,6 +40,8 @@
 #include "proj/internal/internal.hpp"
 #include "proj/internal/io_internal.hpp"
 
+#include "proj_json_streaming_writer.hpp"
+
 #include <map>
 #include <memory>
 #include <set>
@@ -396,26 +398,26 @@ void CoordinateSystemAxis::_exportToWKT(io::WKTFormatter *formatter, int order,
 void CoordinateSystemAxis::_exportToJSON(
     io::JSONFormatter *formatter) const // throw(FormattingException)
 {
-    auto &writer = formatter->writer();
+    auto writer = formatter->writer();
     auto objectContext(
         formatter->MakeObjectContext("Axis", !identifiers().empty()));
 
-    writer.AddObjKey("name");
-    writer.Add(nameStr());
+    writer->AddObjKey("name");
+    writer->Add(nameStr());
 
-    writer.AddObjKey("abbreviation");
-    writer.Add(abbreviation());
+    writer->AddObjKey("abbreviation");
+    writer->Add(abbreviation());
 
-    writer.AddObjKey("direction");
-    writer.Add(direction().toString());
+    writer->AddObjKey("direction");
+    writer->Add(direction().toString());
 
     const auto &l_unit(unit());
     if (l_unit == common::UnitOfMeasure::METRE ||
         l_unit == common::UnitOfMeasure::DEGREE) {
-        writer.AddObjKey("unit");
-        writer.Add(l_unit.name());
+        writer->AddObjKey("unit");
+        writer->Add(l_unit.name());
     } else if (l_unit.type() != common::UnitOfMeasure::Type::NONE) {
-        writer.AddObjKey("unit");
+        writer->AddObjKey("unit");
         l_unit._exportToJSON(formatter);
     }
 
@@ -573,16 +575,16 @@ void CoordinateSystem::_exportToWKT(
 void CoordinateSystem::_exportToJSON(
     io::JSONFormatter *formatter) const // throw(FormattingException)
 {
-    auto &writer = formatter->writer();
+    auto writer = formatter->writer();
     auto objectContext(formatter->MakeObjectContext("CoordinateSystem",
                                                     !identifiers().empty()));
 
-    writer.AddObjKey("subtype");
-    writer.Add(getWKT2Type(true));
+    writer->AddObjKey("subtype");
+    writer->Add(getWKT2Type(true));
 
-    writer.AddObjKey("axis");
+    writer->AddObjKey("axis");
     {
-        auto axisContext(writer.MakeArrayContext(false));
+        auto axisContext(writer->MakeArrayContext(false));
         const auto &l_axisList = axisList();
         for (auto &axis : l_axisList) {
             formatter->setOmitTypeInImmediateChild();
@@ -658,6 +660,27 @@ SphericalCSNNPtr SphericalCS::create(const util::PropertyMap &properties,
                                      const CoordinateSystemAxisNNPtr &axis2,
                                      const CoordinateSystemAxisNNPtr &axis3) {
     std::vector<CoordinateSystemAxisNNPtr> axis{axis1, axis2, axis3};
+    auto cs(SphericalCS::nn_make_shared<SphericalCS>(axis));
+    cs->setProperties(properties);
+    return cs;
+}
+
+// ---------------------------------------------------------------------------
+
+/** \brief Instantiate a SphericalCS with 2 axis.
+ *
+ * This is an extension to ISO19111 to support (planet)-ocentric CS with
+ * geocentric latitude.
+ *
+ * @param properties See \ref general_properties.
+ * @param axis1 The first axis.
+ * @param axis2 The second axis.
+ * @return a new SphericalCS.
+ */
+SphericalCSNNPtr SphericalCS::create(const util::PropertyMap &properties,
+                                     const CoordinateSystemAxisNNPtr &axis1,
+                                     const CoordinateSystemAxisNNPtr &axis2) {
+    std::vector<CoordinateSystemAxisNNPtr> axis{axis1, axis2};
     auto cs(SphericalCS::nn_make_shared<SphericalCS>(axis));
     cs->setProperties(properties);
     return cs;
@@ -1106,7 +1129,7 @@ CartesianCSNNPtr CartesianCS::createSouthPoleEastingNorthNorthingNorth(
 
 /** \brief Instantiate a CartesianCS with the three geocentric axes.
  *
- * @param unit Liinear unit of the axes.
+ * @param unit Linear unit of the axes.
  * @return a new CartesianCS.
  */
 CartesianCSNNPtr

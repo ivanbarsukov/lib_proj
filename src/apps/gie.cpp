@@ -123,7 +123,7 @@ Thomas Knudsen, thokn@sdfe.dk, 2017-10-01/2017-10-08
 /* Package for flexible format I/O - ffio */
 typedef struct ffio {
     FILE *f;
-    const char **tags;
+    const char * const *tags;
     const char *tag;
     char *args;
     char *next_args;
@@ -133,23 +133,24 @@ typedef struct ffio {
     size_t argc;
     size_t lineno, next_lineno;
     size_t level;
+    bool strict_mode;
 }  ffio;
 
 static int get_inp (ffio *G);
 static int skip_to_next_tag (ffio *G);
 static int step_into_gie_block (ffio *G);
-static int locate_tag (ffio *G, const char *tag);
 static int nextline (ffio *G);
 static int at_end_delimiter (ffio *G);
 static const char *at_tag (ffio *G);
 static int at_decorative_element (ffio *G);
 static ffio *ffio_destroy (ffio *G);
-static ffio *ffio_create (const char **tags, size_t n_tags, size_t max_record_size);
+static ffio *ffio_create (const char * const *tags, size_t n_tags, size_t max_record_size);
 
-static const char *gie_tags[] = {
+static const char * const gie_tags[] = {
     "<gie>", "operation", "crs_src", "crs_dst", "use_proj4_init_rules",
     "accept", "expect", "roundtrip", "banner", "verbose",
-    "direction", "tolerance", "ignore", "require_grid", "echo", "skip", "</gie>"
+    "direction", "tolerance", "ignore", "require_grid", "echo", "skip", "</gie>",
+    "<gie-strict>", "</gie-strict>",
 };
 
 static const size_t n_gie_tags = sizeof gie_tags / sizeof gie_tags[0];
@@ -426,7 +427,12 @@ static int process_file (const char *fname) {
     if (F->level==0)
         return errmsg (-3, "File '%s':Missing '<gie>' cmnd - bye!\n", fname);
     if (F->level && F->level%2)
-        return errmsg (-4, "File '%s':Missing '</gie>' cmnd - bye!\n", fname);
+    {
+        if( F->strict_mode )
+            return errmsg (-4, "File '%s':Missing '</gie-strict>' cmnd - bye!\n", fname);
+        else
+            return errmsg (-4, "File '%s':Missing '</gie>' cmnd - bye!\n", fname);
+    }
     return 0;
 }
 
@@ -717,18 +723,27 @@ Attempt to interpret args as a PJ_COORD.
         /* This could be avoided if proj_dmstor used the same proj_strtod()  */
         /* as gie, but that is not the case (yet). When we remove projects.h */
         /* from the public API we can change that.                           */
+
+        // Even Rouault: unsure about the above. Coordinates are not necessarily
+        // geographic coordinates, and the roundtrip through radians for
+        // big projected coordinates cause inaccuracies, that can cause
+        // test failures when testing points at edge of grids.
+        // For example 1501000.0 becomes 1501000.000000000233
         double d = proj_strtod(prev,  (char **) &endp);
-        double dms = PJ_TODEG(proj_dmstor (prev, (char **) &dmsendp));
-       /* TODO: When projects.h is removed, call proj_dmstor() in all cases */
-        if (d != dms && fabs(d) < fabs(dms) && fabs(dms) < fabs(d) + 1) {
-            d = dms;
-            endp = dmsendp;
+        if( *endp != '\0' && !isspace(*endp) )
+        {
+            double dms = PJ_TODEG(proj_dmstor (prev, (char **) &dmsendp));
+            /* TODO: When projects.h is removed, call proj_dmstor() in all cases */
+            if (d != dms && fabs(d) < fabs(dms) && fabs(dms) < fabs(d) + 1) {
+                d = dms;
+                endp = dmsendp;
+            }
+            /* A number like -81d00'00.000 will be parsed correctly by both */
+            /* proj_strtod and proj_dmstor but only the latter will return  */
+            /* the correct end-pointer.                                     */
+            if (d == dms && endp != dmsendp)
+                endp = dmsendp;
         }
-        /* A number like -81d00'00.000 will be parsed correctly by both */
-        /* proj_strtod and proj_dmstor but only the latter will return  */
-        /* the correct end-pointer.                                     */
-        if (d == dms && endp != dmsendp)
-            endp = dmsendp;
 
         /* Break out if there were no more numerals */
         if (prev==endp)
@@ -865,8 +880,8 @@ static int expect_failure_with_errno_message (int expected, int got) {
         banner (T.operation);
     fprintf (T.fout, "%s", T.op_ko? "     -----\n": delim);
     fprintf (T.fout, "     FAILURE in %s(%d):\n",    opt_strip_path (T.curr_file), (int) F->lineno);
-    fprintf (T.fout, "     got errno %s (%d): %s\n", err_const_from_errno(got), got,  pj_strerrno (got));
-    fprintf (T.fout, "     expected %s (%d):  %s",   err_const_from_errno(expected), expected, pj_strerrno (expected));
+    fprintf (T.fout, "     got errno %s (%d): %s\n", err_const_from_errno(got), got,  proj_errno_string (got));
+    fprintf (T.fout, "     expected %s (%d):  %s",   err_const_from_errno(expected), expected, proj_errno_string (expected));
     fprintf (T.fout, "\n");
     return 1;
 }
@@ -919,7 +934,7 @@ Tell GIE what to expect, when transforming the ACCEPTed input
         /* Otherwise, it's a true failure */
         banner (T.operation);
         errmsg (3, "%sInvalid operation definition in line no. %d:\n       %s (errno=%s/%d)\n",
-            delim, (int) T.operation_lineno, pj_strerrno(proj_errno(T.P)),
+            delim, (int) T.operation_lineno, proj_errno_string (proj_errno(T.P)),
             err_const_from_errno (proj_errno(T.P)), proj_errno(T.P)
         );
         return another_failing_failure ();
@@ -936,7 +951,15 @@ Tell GIE what to expect, when transforming the ACCEPTed input
         if (expect_failure_with_errno) {
             if (proj_errno (T.P)==expect_failure_with_errno)
                 return another_succeeding_failure ();
-            fprintf (T.fout, "errno=%d, expected=%d\n", proj_errno (T.P), expect_failure_with_errno);
+            //fprintf (T.fout, "errno=%d, expected=%d\n", proj_errno (T.P), expect_failure_with_errno);
+            banner (T.operation);
+            errmsg (3, "%serrno=%s (%d), expected=%d at line %d\n",
+                delim,
+                err_const_from_errno(proj_errno(T.P)),
+                proj_errno (T.P),
+                expect_failure_with_errno,
+                static_cast<int>(F->lineno)
+            );
             return another_failing_failure ();
         }
 
@@ -1092,86 +1115,33 @@ static int dispatch (const char *cmnd, const char *args) {
 namespace { // anonymous namespace
 struct errno_vs_err_const {const char *the_err_const; int the_errno;};
 static const struct errno_vs_err_const lookup[] = {
-    {"pjd_err_no_args"                  ,  -1},
-    {"pjd_err_no_option_in_init_file"   ,  -2},
-    {"pjd_err_no_colon_in_init_string"  ,  -3},
-    {"pjd_err_proj_not_named"           ,  -4},
-    {"pjd_err_unknown_projection_id"    ,  -5},
-    {"pjd_err_invalid_eccentricity"      ,  -6},
-    {"pjd_err_unknown_unit_id"          ,  -7},
-    {"pjd_err_invalid_boolean_param"    ,  -8},
-    {"pjd_err_unknown_ellp_param"       ,  -9},
-    {"pjd_err_rev_flattening_is_zero"   ,  -10},
-    {"pjd_err_ref_rad_larger_than_90"   ,  -11},
-    {"pjd_err_es_less_than_zero"        ,  -12},
-    {"pjd_err_major_axis_not_given"     ,  -13},
-    {"pjd_err_lat_or_lon_exceed_limit"  ,  -14},
-    {"pjd_err_invalid_x_or_y"           ,  -15},
-    {"pjd_err_wrong_format_dms_value"   ,  -16},
-    {"pjd_err_non_conv_inv_meri_dist"   ,  -17},
-    {"pjd_err_non_con_inv_phi2"         ,  -18},
-    {"pjd_err_acos_asin_arg_too_large"  ,  -19},
-    {"pjd_err_tolerance_condition"      ,  -20},
-    {"pjd_err_conic_lat_equal"          ,  -21},
-    {"pjd_err_lat_larger_than_90"       ,  -22},
-    {"pjd_err_lat1_is_zero"             ,  -23},
-    {"pjd_err_lat_ts_larger_than_90"    ,  -24},
-    {"pjd_err_control_point_no_dist"    ,  -25},
-    {"pjd_err_no_rotation_proj"         ,  -26},
-    {"pjd_err_w_or_m_zero_or_less"      ,  -27},
-    {"pjd_err_lsat_not_in_range"        ,  -28},
-    {"pjd_err_path_not_in_range"        ,  -29},
-    {"pjd_err_invalid_h"                ,  -30},
-    {"pjd_err_k_less_than_zero"         ,  -31},
-    {"pjd_err_lat_1_or_2_zero_or_90"    ,  -32},
-    {"pjd_err_lat_0_or_alpha_eq_90"     ,  -33},
-    {"pjd_err_ellipsoid_use_required"   ,  -34},
-    {"pjd_err_invalid_utm_zone"         ,  -35},
-    {""                                 ,  -36}, /* no longer used */
-    {"pjd_err_failed_to_find_proj"      ,  -37},
-    {"pjd_err_failed_to_load_grid"      ,  -38},
-    {"pjd_err_invalid_m_or_n"           ,  -39},
-    {"pjd_err_n_out_of_range"           ,  -40},
-    {"pjd_err_lat_1_2_unspecified"      ,  -41},
-    {"pjd_err_abs_lat1_eq_abs_lat2"     ,  -42},
-    {"pjd_err_lat_0_half_pi_from_mean"  ,  -43},
-    {"pjd_err_unparseable_cs_def"       ,  -44},
-    {"pjd_err_geocentric"               ,  -45},
-    {"pjd_err_unknown_prime_meridian"   ,  -46},
-    {"pjd_err_axis"                     ,  -47},
-    {"pjd_err_grid_area"                ,  -48},
-    {"pjd_err_invalid_sweep_axis"       ,  -49},
-    {"pjd_err_malformed_pipeline"       ,  -50},
-    {"pjd_err_unit_factor_less_than_0"  ,  -51},
-    {"pjd_err_invalid_scale"            ,  -52},
-    {"pjd_err_non_convergent"           ,  -53},
-    {"pjd_err_missing_args"             ,  -54},
-    {"pjd_err_lat_0_is_zero"            ,  -55},
-    {"pjd_err_ellipsoidal_unsupported"  ,  -56},
-    {"pjd_err_too_many_inits"           ,  -57},
-    {"pjd_err_invalid_arg"              ,  -58},
-    {"pjd_err_inconsistent_unit"        ,  -59},
-    {"pjd_err_mutually_exclusive_args"  ,  -60},
-    {"pjd_err_generic_error"            ,  -61},
-    {"pjd_err_network_error"            ,  -62},
-    {"pjd_err_dont_skip"                ,  5555},
-    {"pjd_err_unknown"                  ,  9999},
-    {"pjd_err_enomem"                   ,  ENOMEM},
+
+    { "invalid_op",                              PROJ_ERR_INVALID_OP },
+    { "invalid_op_wrong_syntax",                 PROJ_ERR_INVALID_OP_WRONG_SYNTAX },
+    { "invalid_op_missing_arg",                  PROJ_ERR_INVALID_OP_MISSING_ARG },
+    { "invalid_op_illegal_arg_value",            PROJ_ERR_INVALID_OP_ILLEGAL_ARG_VALUE },
+    { "invalid_op_mutually_exclusive_args",      PROJ_ERR_INVALID_OP_MUTUALLY_EXCLUSIVE_ARGS },
+    { "invalid_op_file_not_found_or_invalid",    PROJ_ERR_INVALID_OP_FILE_NOT_FOUND_OR_INVALID },
+    { "coord_transfm",                           PROJ_ERR_COORD_TRANSFM },
+    { "coord_transfm_invalid_coord",             PROJ_ERR_COORD_TRANSFM_INVALID_COORD },
+    { "coord_transfm_outside_projection_domain", PROJ_ERR_COORD_TRANSFM_OUTSIDE_PROJECTION_DOMAIN },
+    { "coord_transfm_no_operation",              PROJ_ERR_COORD_TRANSFM_NO_OPERATION },
+    { "coord_transfm_outside_grid",              PROJ_ERR_COORD_TRANSFM_OUTSIDE_GRID },
+    { "coord_transfm_grid_at_nodata",            PROJ_ERR_COORD_TRANSFM_GRID_AT_NODATA },
+    { "other",                                   PROJ_ERR_OTHER },
+    { "api_misuse",                              PROJ_ERR_OTHER_API_MISUSE },
+    { "no_inverse_op",                           PROJ_ERR_OTHER_NO_INVERSE_OP },
+    { "network_error",                           PROJ_ERR_OTHER_NETWORK_ERROR },
 };
 } // anonymous namespace
-
-static const struct errno_vs_err_const unknown = {"PJD_ERR_UNKNOWN", 9999};
-
 
 static int list_err_codes (void) {
     int i;
     const int n = sizeof lookup / sizeof lookup[0];
 
     for (i = 0;  i < n;  i++) {
-        if (9999==lookup[i].the_errno)
-            break;
-        fprintf (T.fout, "%25s  (%2.2d):  %s\n", lookup[i].the_err_const + 8,
-                 lookup[i].the_errno, pj_strerrno(lookup[i].the_errno));
+        fprintf (T.fout, "%25s  (%2.2d):  %s\n", lookup[i].the_err_const,
+                 lookup[i].the_errno, proj_errno_string (lookup[i].the_errno));
     }
     return 0;
 }
@@ -1183,9 +1153,9 @@ static const char *err_const_from_errno (int err) {
 
     for (i = 0;  i < n;  i++) {
         if (err==lookup[i].the_errno)
-            return lookup[i].the_err_const + 8;
+            return lookup[i].the_err_const;
     }
-    return unknown.the_err_const;
+    return "unknown";
 }
 
 
@@ -1211,14 +1181,6 @@ static int errno_from_err_const (const char *err_const) {
     /* Else try to find a matching identifier */
     len = strlen (tolower_err_const);
 
-    /* First try to find a match excluding the PJD_ERR_ prefix */
-    for (i = 0;  i < n;  i++) {
-        if (strlen(lookup[i].the_err_const) > 8 &&
-            0==strncmp (lookup[i].the_err_const + 8, err_const, len))
-            return lookup[i].the_errno;
-    }
-
-    /* If that did not work, try with the full name */
     for (i = 0;  i < n;  i++) {
         if (0==strncmp (lookup[i].the_err_const, err_const, len))
             return lookup[i].the_errno;
@@ -1267,7 +1229,7 @@ See the PROJ ".gie" test suites for examples of supported formatting.
 
 
 /***************************************************************************************/
-static ffio *ffio_create (const char **tags, size_t n_tags, size_t max_record_size) {
+static ffio *ffio_create (const char * const *tags, size_t n_tags, size_t max_record_size) {
 /****************************************************************************************
 Constructor for the ffio object.
 ****************************************************************************************/
@@ -1304,7 +1266,7 @@ Constructor for the ffio object.
 /***************************************************************************************/
 static ffio *ffio_destroy (ffio *G) {
 /****************************************************************************************
-Free all allocated associated memory, then free G itself. For extra RAII compliancy,
+Free all allocated associated memory, then free G itself. For extra RAII compliance,
 the file object should also be closed if still open, but this will require additional
 control logic, and ffio is a gie tool specific package, so we fall back to asserting that
 fclose has been called prior to ffio_destroy.
@@ -1396,24 +1358,6 @@ Read next line of input file. Returns 1 on success, 0 on failure.
 }
 
 
-
-/***************************************************************************************/
-static int locate_tag (ffio *G, const char *tag) {
-/****************************************************************************************
-Find start-of-line tag (currently only used to search for for <gie>, but any tag
-valid).
-
-Returns 1 on success, 0 on failure.
-****************************************************************************************/
-    size_t n = strlen (tag);
-    while (0!=strncmp (tag, G->next_args, n))
-        if (0==nextline (G))
-            return 0;
-    return 1;
-}
-
-
-
 /***************************************************************************************/
 static int step_into_gie_block (ffio *G) {
 /****************************************************************************************
@@ -1423,22 +1367,25 @@ Make sure we're inside a <gie>-block. Return 1 on success, 0 otherwise.
     if (G->level % 2)
         return 1;
 
-    if (0==locate_tag (G, "<gie>"))
-        return 0;
-
-    while (0!=strncmp ("<gie>", G->next_args, 5)) {
-        G->next_args[0] = 0;
-        if (feof (G->f))
+    while (strncmp (G->next_args, "<gie>", strlen("<gie>")) != 0 &&
+           strncmp (G->next_args, "<gie-strict>", strlen("<gie-strict>")) != 0 )
+    {
+        if (0==nextline (G))
             return 0;
-        if (nullptr==fgets (G->next_args, (int) G->next_args_size - 1, G->f))
-            return 0;
-        pj_chomp (G->next_args);
-        G->next_lineno++;
     }
+
     G->level++;
 
-    /* We're ready at the start - now step into the block */
-    return nextline (G);
+    if( strncmp (G->next_args, "<gie-strict>", strlen("<gie-strict>")) == 0 )
+    {
+        G->strict_mode = true;
+        return 0;
+    }
+    else
+    {
+        /* We're ready at the start - now step into the block */
+        return nextline (G);
+    }
 }
 
 
@@ -1514,8 +1461,54 @@ whitespace etc. The block is stored in G->args. Returns 1 on success, 0 otherwis
 ****************************************************************************************/
     G->args[0] = 0;
 
-    if (0==skip_to_next_tag (G))
+    // Special parsing in strict_mode:
+    // - All non-comment/decoration lines must start with a valid tag
+    // - Commands split on several lines should be terminated with " \"
+    if( G->strict_mode )
+    {
+        while( nextline(G) )
+        {
+            G->lineno = G->next_lineno;
+            if( G->next_args[0] == 0 || at_decorative_element(G) ) {
+                continue;
+            }
+            G->tag = at_tag (G);
+            if (nullptr==G->tag)
+            {
+                another_failure();
+                fprintf (T.fout, "unsupported command line %d: %s\n", (int)G->lineno, G->next_args);
+                return 0;
+            }
+
+            append_args (G);
+            pj_shrink (G->args);
+            while( G->args[0] != '\0' && G->args[strlen(G->args)-1] == '\\' )
+            {
+                G->args[strlen(G->args)-1] = 0;
+                if( !nextline(G) )
+                {
+                    return 0;
+                }
+                G->lineno = G->next_lineno;
+                append_args (G);
+                pj_shrink (G->args);
+            }
+            if ( 0==strcmp (G->tag, "</gie-strict>")) {
+                G->level++;
+                G->strict_mode = false;
+            }
+            return 1;
+        }
         return 0;
+    }
+
+    if (0==skip_to_next_tag (G))
+    {
+        // If we just entered <gie-strict>, re-enter to read the first command
+        if( G->strict_mode )
+            return get_inp(G);
+        return 0;
+    }
     G->tag = at_tag (G);
 
     if (nullptr==G->tag)

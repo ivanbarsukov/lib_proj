@@ -13,9 +13,9 @@ target_compile_options(cs2cs PRIVATE ${PROJ_CXX_WARN_FLAGS})
 install(TARGETS cs2cs
   RUNTIME DESTINATION ${INSTALL_BIN_DIR})
 
-if(MSVC AND BUILD_SHARED_LIBS)
-  target_compile_definitions(cs2cs PRIVATE PROJ_MSVC_DLL_IMPORT=1)
-endif()
+# if(MSVC AND BUILD_SHARED_LIBS)
+#   target_compile_definitions(cs2cs PRIVATE PROJ_MSVC_DLL_IMPORT=1)
+# endif()
 
 if(OSX_FRAMEWORK)
     set_target_properties(cs2cs PROPERTIES INSTALL_RPATH "@executable_path/../../Library/Frameworks")

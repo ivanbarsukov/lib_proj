@@ -7,12 +7,12 @@
 # Distributed under the MIT license
 #
 # Modified by Dmitry Baryshnikov <polimax@mail.ru> for NextGIS Borsch build system
-# Copyright (C) 2016-2020 NextGIS, <info@nextgis.com>
+# Copyright (C) 2016-2022 NextGIS, <info@nextgis.com>
 #
 #################################################################################
 # General settings
 #################################################################################
-cmake_minimum_required(VERSION 2.8.12 FATAL_ERROR)
+cmake_minimum_required(VERSION 3.9 FATAL_ERROR)
 
 # proj is an ANSI C project
 project(proj LANGUAGES C CXX)
@@ -71,6 +71,15 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 message(STATUS "Requiring C++${CMAKE_CXX_STANDARD} - done")
 
+# Set C99 version
+# Make CMAKE_C_STANDARD available as cache option overridable by user
+set(CMAKE_C_STANDARD 99
+  CACHE STRING "C standard version to use (default is 99)")
+message(STATUS "Requiring C${CMAKE_C_STANDARD}")
+set(CMAKE_C_STANDARD_REQUIRED ON)
+set(CMAKE_C_EXTENSIONS OFF)
+message(STATUS "Requiring C${CMAKE_C_STANDARD} - done")
+
 # Set global -fvisibility=hidden
 set(CMAKE_C_VISIBILITY_PRESET hidden)
 set(CMAKE_CXX_VISIBILITY_PRESET hidden)
@@ -119,6 +128,13 @@ elseif("${CMAKE_C_COMPILER_ID}" STREQUAL "Intel")
   endif()
 endif()
 
+if (CMAKE_CXX_COMPILER_ID STREQUAL "IntelLLVM")
+  # Intel CXX compiler based on clang defaults to -ffast-math, which
+  # breaks std::isinf(), std::isnan(), etc.
+  set(CMAKE_C_FLAGS ${CMAKE_C_FLAGS} -fno-fast-math)
+  set(CMAKE_CXX_FLAGS ${CMAKE_CXX_FLAGS} -fno-fast-math)
+endif ()
+
 set(PROJ_C_WARN_FLAGS "${PROJ_C_WARN_FLAGS}"
   CACHE STRING "C flags used to compile PROJ targets")
 set(PROJ_CXX_WARN_FLAGS "${PROJ_CXX_WARN_FLAGS}"
@@ -140,8 +156,8 @@ endif()
 
 # set(PROJ_API_VERSION "1${PROJECT_VERSION_MAJOR}")
 # set(PROJ_BUILD_VERSION "1${VERSION}")
-set(PROJ_API_VERSION "19")
-set(PROJ_BUILD_VERSION "19.0.0")
+set(PROJ_API_VERSION "22")
+set(PROJ_BUILD_VERSION "22.0.0")
 
 set(API_VERSION ${PROJ_API_VERSION})
 report_version(${PROJECT_NAME} "${VERSION}")
@@ -201,6 +217,12 @@ if(ENABLE_CURL)
     message(SEND_ERROR "curl dependency not found!")
   endif()
 endif()
+################################################################################
+
+option(PROJ_LIB_ENV_VAR_TRIED_LAST "Whether the PROJ_LIB environment variable should be tried after the hardcoded location" OFF)
+if(PROJ_LIB_ENV_VAR_TRIED_LAST)
+    add_definitions(-DPROJ_LIB_ENV_VAR_TRIED_LAST)
+endif()
 
 ################################################################################
 # threading configuration
@@ -247,24 +269,26 @@ if(MSVC OR CMAKE_CONFIGURATION_TYPES)
   set(CMAKE_DEBUG_POSTFIX _d)
 endif()
 
-configure_file(${CMAKE_SOURCE_DIR}/cmake/proj.pc.cmakein  ${CMAKE_BINARY_DIR}/proj.pc IMMEDIATE @ONLY)
+# Put the libraries and binaries that get built into directories at the
+# top of the build tree rather than in hard-to-find leaf
+# directories. This simplifies manual testing and the use of the build
+# tree rather than installed PROJ libraries.
+set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR}/lib)
+set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR}/lib)
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR}/bin)
+link_directories(${CMAKE_LIBRARY_OUTPUT_DIRECTORY})
+
+# configure_file(${CMAKE_SOURCE_DIR}/cmake/proj.pc.cmakein  ${CMAKE_BINARY_DIR}/proj.pc IMMEDIATE @ONLY)
 ################################################################################
 # Tests
 ################################################################################
 include(CTest)
 
 if(BUILD_TESTING)
-  include(ProjTest)
+    include(ProjTest)
+else()
+    message(STATUS "Testing disabled")
 endif()
-
-# Put the libraries and binaries that get built into directories at the
-# top of the build tree rather than in hard-to-find leaf
-# directories. This simplifies manual testing and the use of the build
-# tree rather than installed Boost libraries.
-set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR}/lib)
-set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR}/lib)
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR}/bin)
-link_directories(${CMAKE_LIBRARY_OUTPUT_DIRECTORY})
 
 string(TOUPPER ${PACKAGE_NAME} PACKAGE_UPPER_NAME)
 ################################################################################

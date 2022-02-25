@@ -1,27 +1,17 @@
+# message(STATUS "Configuring proj library:")
+
 ##############################################
 ### SWITCH BETWEEN STATIC OR SHARED LIBRARY###
 ##############################################
-# colormsg(_HIBLUE_ "Configuring proj library:")
-# message(STATUS "")
 
-# default config, shared on unix and static on Windows
-# if(UNIX)
-#   set(BUILD_LIBPROJ_SHARED_DEFAULT ON)
-# endif()
+# default config is shared, except static on Windows
+# set(BUILD_SHARED_LIBS_DEFAULT ON)
 # if(WIN32)
-#   set(BUILD_LIBPROJ_SHARED_DEFAULT OFF)
+#   set(BUILD_SHARED_LIBS_DEFAULT OFF)
 # endif()
-# option(BUILD_LIBPROJ_SHARED
-#   "Build libproj library shared." ${BUILD_LIBPROJ_SHARED_DEFAULT})
-# if(BUILD_LIBPROJ_SHARED)
-#   set(PROJ_LIBRARY_TYPE SHARED)
-# else()
-#   set(PROJ_LIBRARY_TYPE STATIC)
-# endif()
+# option(BUILD_SHARED_LIBS
+#   "Build PROJ library shared." ${BUILD_SHARED_LIBS_DEFAULT})
 
-if(WIN32)
-  add_definitions(-DNOMINMAX)
-endif()
 
 option(USE_THREAD "Build libproj with thread/mutex support " ON)
 if(NOT USE_THREAD)
@@ -52,219 +42,230 @@ endif()
 ##############################################
 
 set(SRC_LIBPROJ_PROJECTIONS
-  projections/aeqd.cpp
-  projections/gnom.cpp
-  projections/laea.cpp
-  projections/mod_ster.cpp
-  projections/nsper.cpp
-  projections/nzmg.cpp
-  projections/ortho.cpp
-  projections/stere.cpp
-  projections/sterea.cpp
-  projections/aea.cpp
-  projections/bipc.cpp
-  projections/bonne.cpp
-  projections/eqdc.cpp
-  projections/isea.cpp
-  projections/ccon.cpp
-  projections/imw_p.cpp
-  projections/krovak.cpp
-  projections/lcc.cpp
-  projections/poly.cpp
-  projections/rpoly.cpp
-  projections/sconics.cpp
-  projections/rouss.cpp
-  projections/cass.cpp
-  projections/cc.cpp
-  projections/cea.cpp
-  projections/eqc.cpp
-  projections/gall.cpp
-  projections/labrd.cpp
-  projections/lsat.cpp
-  projections/misrsom.cpp
-  projections/merc.cpp
-  projections/mill.cpp
-  projections/ocea.cpp
-  projections/omerc.cpp
-  projections/somerc.cpp
-  projections/tcc.cpp
-  projections/tcea.cpp
-  projections/times.cpp
-  projections/tmerc.cpp
-  projections/tobmerc.cpp
-  projections/airy.cpp
-  projections/aitoff.cpp
-  projections/august.cpp
-  projections/bacon.cpp
-  projections/bertin1953.cpp
-  projections/chamb.cpp
-  projections/hammer.cpp
-  projections/lagrng.cpp
-  projections/larr.cpp
-  projections/lask.cpp
-  projections/latlong.cpp
-  projections/nicol.cpp
-  projections/ob_tran.cpp
-  projections/oea.cpp
-  projections/tpeqd.cpp
-  projections/vandg.cpp
-  projections/vandg2.cpp
-  projections/vandg4.cpp
-  projections/wag7.cpp
-  projections/lcca.cpp
-  projections/geos.cpp
-  projections/boggs.cpp
-  projections/collg.cpp
-  projections/comill.cpp
-  projections/crast.cpp
-  projections/denoy.cpp
-  projections/eck1.cpp
-  projections/eck2.cpp
-  projections/eck3.cpp
-  projections/eck4.cpp
-  projections/eck5.cpp
-  projections/fahey.cpp
-  projections/fouc_s.cpp
-  projections/gins8.cpp
-  projections/gstmerc.cpp
-  projections/gn_sinu.cpp
-  projections/goode.cpp
-  projections/igh.cpp
-  projections/hatano.cpp
-  projections/loxim.cpp
-  projections/mbt_fps.cpp
-  projections/mbtfpp.cpp
-  projections/mbtfpq.cpp
-  projections/moll.cpp
-  projections/nell.cpp
-  projections/nell_h.cpp
-  projections/patterson.cpp
-  projections/putp2.cpp
-  projections/putp3.cpp
-  projections/putp4p.cpp
-  projections/putp5.cpp
-  projections/putp6.cpp
-  projections/qsc.cpp
-  projections/robin.cpp
-  projections/sch.cpp
-  projections/sts.cpp
-  projections/urm5.cpp
-  projections/urmfps.cpp
-  projections/wag2.cpp
-  projections/wag3.cpp
-  projections/wink1.cpp
-  projections/wink2.cpp
-  projections/healpix.cpp
-  projections/natearth.cpp
-  projections/natearth2.cpp
-  projections/calcofi.cpp
-  projections/eqearth.cpp
+    projections/aeqd.cpp
+    projections/adams.cpp
+    projections/gnom.cpp
+    projections/laea.cpp
+    projections/mod_ster.cpp
+    projections/nsper.cpp
+    projections/nzmg.cpp
+    projections/ortho.cpp
+    projections/stere.cpp
+    projections/sterea.cpp
+    projections/aea.cpp
+    projections/bipc.cpp
+    projections/bonne.cpp
+    projections/eqdc.cpp
+    projections/isea.cpp
+    projections/ccon.cpp
+    projections/imw_p.cpp
+    projections/krovak.cpp
+    projections/lcc.cpp
+    projections/poly.cpp
+    projections/rpoly.cpp
+    projections/sconics.cpp
+    projections/rouss.cpp
+    projections/cass.cpp
+    projections/cc.cpp
+    projections/cea.cpp
+    projections/eqc.cpp
+    projections/gall.cpp
+    projections/labrd.cpp
+    projections/lsat.cpp
+    projections/misrsom.cpp
+    projections/merc.cpp
+    projections/mill.cpp
+    projections/ocea.cpp
+    projections/omerc.cpp
+    projections/somerc.cpp
+    projections/tcc.cpp
+    projections/tcea.cpp
+    projections/times.cpp
+    projections/tmerc.cpp
+    projections/tobmerc.cpp
+    projections/airy.cpp
+    projections/aitoff.cpp
+    projections/august.cpp
+    projections/bacon.cpp
+    projections/bertin1953.cpp
+    projections/chamb.cpp
+    projections/hammer.cpp
+    projections/lagrng.cpp
+    projections/larr.cpp
+    projections/lask.cpp
+    projections/latlong.cpp
+    projections/nicol.cpp
+    projections/ob_tran.cpp
+    projections/oea.cpp
+    projections/tpeqd.cpp
+    projections/vandg.cpp
+    projections/vandg2.cpp
+    projections/vandg4.cpp
+    projections/wag7.cpp
+    projections/lcca.cpp
+    projections/geos.cpp
+    projections/boggs.cpp
+    projections/collg.cpp
+    projections/comill.cpp
+    projections/crast.cpp
+    projections/denoy.cpp
+    projections/eck1.cpp
+    projections/eck2.cpp
+    projections/eck3.cpp
+    projections/eck4.cpp
+    projections/eck5.cpp
+    projections/fahey.cpp
+    projections/fouc_s.cpp
+    projections/gins8.cpp
+    projections/gstmerc.cpp
+    projections/gn_sinu.cpp
+    projections/goode.cpp
+    projections/igh.cpp
+    projections/igh_o.cpp
+    projections/hatano.cpp
+    projections/loxim.cpp
+    projections/mbt_fps.cpp
+    projections/mbtfpp.cpp
+    projections/mbtfpq.cpp
+    projections/moll.cpp
+    projections/nell.cpp
+    projections/nell_h.cpp
+    projections/patterson.cpp
+    projections/putp2.cpp
+    projections/putp3.cpp
+    projections/putp4p.cpp
+    projections/putp5.cpp
+    projections/putp6.cpp
+    projections/qsc.cpp
+    projections/robin.cpp
+    projections/s2.cpp
+    projections/sch.cpp
+    projections/sts.cpp
+    projections/urm5.cpp
+    projections/urmfps.cpp
+    projections/wag2.cpp
+    projections/wag3.cpp
+    projections/wink1.cpp
+    projections/wink2.cpp
+    projections/healpix.cpp
+    projections/natearth.cpp
+    projections/natearth2.cpp
+    projections/calcofi.cpp
+    projections/eqearth.cpp
+    projections/col_urban.cpp
 )
 
 set(SRC_LIBPROJ_CONVERSIONS
-  conversions/axisswap.cpp
-  conversions/cart.cpp
-  conversions/geoc.cpp
-  conversions/geocent.cpp
-  conversions/noop.cpp
-  conversions/set.cpp
-  conversions/unitconvert.cpp
+    conversions/axisswap.cpp
+    conversions/cart.cpp
+    conversions/geoc.cpp
+    conversions/geocent.cpp
+    conversions/noop.cpp
+    conversions/topocentric.cpp
+    conversions/set.cpp
+    conversions/unitconvert.cpp
 )
 
 set(SRC_LIBPROJ_TRANSFORMATIONS
-  transformations/affine.cpp
-  transformations/deformation.cpp
-  transformations/helmert.cpp
-  transformations/hgridshift.cpp
-  transformations/horner.cpp
-  transformations/molodensky.cpp
-  transformations/vgridshift.cpp
-  transformations/xyzgridshift.cpp
+    transformations/affine.cpp
+    transformations/deformation.cpp
+    transformations/helmert.cpp
+    transformations/hgridshift.cpp
+    transformations/horner.cpp
+    transformations/molodensky.cpp
+    transformations/vgridshift.cpp
+    transformations/xyzgridshift.cpp
+    transformations/defmodel.cpp
+    transformations/tinshift.cpp
 )
 
 set(SRC_LIBPROJ_ISO19111
-  iso19111/static.cpp
-  iso19111/util.cpp
-  iso19111/metadata.cpp
-  iso19111/common.cpp
-  iso19111/crs.cpp
-  iso19111/datum.cpp
-  iso19111/coordinatesystem.cpp
-  iso19111/coordinateoperation.cpp
-  iso19111/io.cpp
-  iso19111/internal.cpp
-  iso19111/factory.cpp
-  iso19111/c_api.cpp
+    iso19111/static.cpp
+    iso19111/util.cpp
+    iso19111/metadata.cpp
+    iso19111/common.cpp
+    iso19111/crs.cpp
+    iso19111/datum.cpp
+    iso19111/coordinatesystem.cpp
+    iso19111/io.cpp
+    iso19111/internal.cpp
+    iso19111/factory.cpp
+    iso19111/c_api.cpp
+    iso19111/operation/concatenatedoperation.cpp
+    iso19111/operation/coordinateoperationfactory.cpp
+    iso19111/operation/conversion.cpp
+    iso19111/operation/esriparammappings.cpp
+    iso19111/operation/oputils.cpp
+    iso19111/operation/parammappings.cpp
+    iso19111/operation/projbasedoperation.cpp
+    iso19111/operation/singleoperation.cpp
+    iso19111/operation/transformation.cpp
+    iso19111/operation/vectorofvaluesparams.cpp
 )
 
 set(SRC_LIBPROJ_CORE
-  4D_api.cpp
-  aasincos.cpp
-  adjlon.cpp
-  auth.cpp
-  ctx.cpp
-  datum_set.cpp
-  datums.cpp
-  deriv.cpp
-  dmstor.cpp
-  ell_set.cpp
-  ellps.cpp
-  errno.cpp
-  factors.cpp
-  fileapi.cpp
-  fwd.cpp
-  gauss.cpp
-  geocent.cpp
-  geocent.h
-  geodesic.c
-  init.cpp
-  initcache.cpp
-  internal.cpp
-  inv.cpp
-  list.cpp
-  log.cpp
-  malloc.cpp
-  mlfn.cpp
-  msfn.cpp
-  mutex.cpp
-  param.cpp
-  phi2.cpp
-  pipeline.cpp
-  pj_list.h
-  pr_list.cpp
-  proj_internal.h
-  proj_mdist.cpp
-  qsfn.cpp
-  release.cpp
-  rtodms.cpp
-  strerrno.cpp
-  strtod.cpp
-  transform.cpp
-  tsfn.cpp
-  units.cpp
-  utils.cpp
-  wkt1_generated_parser.c
-  wkt1_generated_parser.h
-  wkt1_parser.cpp
-  wkt1_parser.h
-  wkt2_generated_parser.c
-  wkt2_generated_parser.h
-  wkt2_parser.cpp
-  wkt2_parser.h
-  wkt_parser.cpp
-  wkt_parser.hpp
-  zpoly1.cpp
-  proj_json_streaming_writer.hpp
-  proj_json_streaming_writer.cpp
-  tracing.cpp
-  grids.hpp
-  grids.cpp
-  filemanager.hpp
-  filemanager.cpp
-  networkfilemanager.cpp
-  sqlite3_utils.hpp
-  sqlite3_utils.cpp
-  ${CMAKE_CURRENT_BINARY_DIR}/proj_config.h
+    4D_api.cpp
+    aasincos.cpp
+    adjlon.cpp
+    auth.cpp
+    ctx.cpp
+    datum_set.cpp
+    datums.cpp
+    deriv.cpp
+    dmstor.cpp
+    ell_set.cpp
+    ellps.cpp
+    factors.cpp
+    fwd.cpp
+    gauss.cpp
+    generic_inverse.cpp
+    geodesic.c
+    init.cpp
+    initcache.cpp
+    internal.cpp
+    inv.cpp
+    list.cpp
+    log.cpp
+    malloc.cpp
+    mlfn.cpp
+    msfn.cpp
+    mutex.cpp
+    param.cpp
+    phi2.cpp
+    pipeline.cpp
+    pj_list.h
+    pr_list.cpp
+    proj_internal.h
+    proj_mdist.cpp
+    qsfn.cpp
+    release.cpp
+    rtodms.cpp
+    strerrno.cpp
+    strtod.cpp
+    tsfn.cpp
+    units.cpp
+    wkt1_generated_parser.c
+    wkt1_generated_parser.h
+    wkt1_parser.cpp
+    wkt1_parser.h
+    wkt2_generated_parser.c
+    wkt2_generated_parser.h
+    wkt2_parser.cpp
+    wkt2_parser.h
+    wkt_parser.cpp
+    wkt_parser.hpp
+    zpoly1.cpp
+    proj_json_streaming_writer.hpp
+    proj_json_streaming_writer.cpp
+    tracing.cpp
+    grids.hpp
+    grids.cpp
+    filemanager.hpp
+    filemanager.cpp
+    networkfilemanager.cpp
+    sqlite3_utils.hpp
+    sqlite3_utils.cpp
+    ${CMAKE_CURRENT_BINARY_DIR}/proj_config.h
 )
 
 set(HEADERS_LIBPROJ
@@ -309,6 +310,42 @@ set(HEADERS_PUBLIC
 # Embed PROJ_LIB data files location
 add_definitions(-DPROJ_LIB="${CMAKE_INSTALL_PREFIX}/${INSTALL_DATA_DIR}")
 
+
+###########################################################
+# targets to refresh wkt1_parser.cpp and wkt2_parser.cpp
+###########################################################
+
+# Those targets need to be run manually each time wkt1_grammar.y / wkt2_grammar.y
+# is modified.
+# We could of course run them automatically, but that would make building
+# PROJ harder.
+
+# This target checks that wkt1_grammar.y md5sum has not changed
+# If it has, then it should be updated and the generate_wkt1_parser target
+# should be manually run
+
+add_custom_target(generate_wkt1_parser
+                  COMMAND ${CMAKE_COMMAND}
+                      "-DPREFIX=pj_wkt1_"
+                      "-DIN_FILE=wkt1_grammar.y"
+                      "-DOUT_FILE=wkt1_generated_parser.c"
+                      -P "${CMAKE_CURRENT_SOURCE_DIR}/generate_wkt_parser.cmake"
+                  WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+                  VERBATIM)
+
+# This target checks that wkt2_grammar.y md5sum has not changed
+# If it has, then it should be updated and the generate_wkt2_parser target
+# should be manually run
+
+add_custom_target(generate_wkt2_parser
+                  COMMAND ${CMAKE_COMMAND}
+                      "-DPREFIX=pj_wkt2_"
+                      "-DIN_FILE=wkt2_grammar.y"
+                      "-DOUT_FILE=wkt2_generated_parser.c"
+                      -P "${CMAKE_CURRENT_SOURCE_DIR}/generate_wkt_parser.cmake"
+                  WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+                  VERBATIM)
+
 #################################################
 ## targets: libproj and proj_config.h
 #################################################
@@ -340,12 +377,14 @@ endif()
 add_library(
   ${PROJ_CORE_TARGET}
   ${LIB_TYPE}
-  ${PROJ_LIBRARY_TYPE}
   ${ALL_LIBPROJ_SOURCES}
   ${ALL_LIBPROJ_HEADERS}
   ${PROJ_RESOURCES}
   ${HEADERS_PUBLIC}
 )
+
+add_library(PROJ::proj ALIAS proj)
+
 target_compile_options(${PROJ_CORE_TARGET}
   PRIVATE $<$<COMPILE_LANGUAGE:C>:${PROJ_C_WARN_FLAGS}>
   PRIVATE $<$<COMPILE_LANGUAGE:CXX>:${PROJ_CXX_WARN_FLAGS}>
@@ -363,6 +402,10 @@ if(OSX_FRAMEWORK)
     VERSION ${VERSION}
     SOVERSION ${FRAMEWORK_VERSION}
     PUBLIC_HEADER "${ALL_LIBPROJ_HEADERS}")
+endif()
+
+if(MSVC OR MINGW)
+    target_compile_definitions(${PROJ_CORE_TARGET} PRIVATE -DNOMINMAX)
 endif()
 
 # Tell Intel compiler to do arithmetic accurately.  This is needed to stop the
@@ -386,7 +429,9 @@ if(ENABLE_IPO)
 endif()
 
 target_include_directories(${PROJ_CORE_TARGET} INTERFACE
-  $<INSTALL_INTERFACE:${INCLUDEDIR}>)
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
+    $<BUILD_INTERFACE:${PROJ_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:${INCLUDEDIR}>)
 
 if(WIN32)
   set_target_properties(${PROJ_CORE_TARGET}
@@ -438,26 +483,20 @@ endif()
 # include_directories(${SQLITE3_INCLUDE_DIR})
 # target_link_libraries(${PROJ_CORE_TARGET} ${SQLITE3_LIBRARY})
 
-# if(TIFF_ENABLED)
-#   target_compile_definitions(${PROJ_CORE_TARGET} PRIVATE -DTIFF_ENABLED)
+if(TIFF_ENABLED)
+  target_compile_definitions(${PROJ_CORE_TARGET} PRIVATE -DTIFF_ENABLED)
 #   target_include_directories(${PROJ_CORE_TARGET} PRIVATE ${TIFF_INCLUDE_DIR})
 #   target_link_libraries(${PROJ_CORE_TARGET} ${TIFF_LIBRARY})
-# endif()
+endif()
 
-# if(CURL_ENABLED)
-#   target_compile_definitions(${PROJ_CORE_TARGET} PRIVATE -DCURL_ENABLED)
+if(CURL_ENABLED)
+  target_compile_definitions(${PROJ_CORE_TARGET} PRIVATE -DCURL_ENABLED)
 #   target_include_directories(${PROJ_CORE_TARGET} PRIVATE ${CURL_INCLUDE_DIR})
 #   target_link_libraries(${PROJ_CORE_TARGET} ${CURL_LIBRARY})
-# endif()
-
-# if(MSVC)
-#   target_compile_definitions(${PROJ_CORE_TARGET} PRIVATE PROJ_MSVC_DLL_EXPORT=1)
-#   target_compile_definitions(${PROJ_CORE_TARGET} INTERFACE PROJ_MSVC_DLL_IMPORT)
-# endif()
+endif()
 
 if(MSVC AND BUILD_SHARED_LIBS)
-  target_compile_definitions(${PROJ_CORE_TARGET}
-    PRIVATE PROJ_MSVC_DLL_EXPORT=1)
+    target_compile_definitions(${PROJ_CORE_TARGET} PRIVATE PROJ_MSVC_DLL_EXPORT=1)
 endif()
 
 target_link_extlibraries(${PROJ_CORE_TARGET})
@@ -487,27 +526,16 @@ if(NOT SKIP_INSTALL_LIBRARIES AND NOT SKIP_INSTALL_ALL )
     endif()
 endif()
 
-if(NOT SKIP_INSTALL_HEADERS AND NOT SKIP_INSTALL_ALL )
-  install(FILES ${ALL_LIBPROJ_HEADERS} DESTINATION ${INSTALL_INC_DIR})
-  if(UNIX AND NOT OSX_FRAMEWORK)
-        install(FILES ${CMAKE_BINARY_DIR}/proj.pc DESTINATION ${INSTALL_PKGCONFIG_DIR} COMPONENT libraries)
-    endif()
-endif()
+# if(NOT SKIP_INSTALL_HEADERS AND NOT SKIP_INSTALL_ALL )
+#   install(FILES ${ALL_LIBPROJ_HEADERS} DESTINATION ${INSTALL_INC_DIR})
+#   if(UNIX AND NOT OSX_FRAMEWORK)
+#         install(FILES ${CMAKE_BINARY_DIR}/proj.pc DESTINATION ${INSTALL_PKGCONFIG_DIR} COMPONENT libraries)
+#     endif()
+# endif()
 
 ##############################################
 # Core configuration summary
 ##############################################
-# boost_report_value(PROJ_CORE_TARGET)
-# boost_report_value(PROJ_CORE_TARGET_OUTPUT_NAME)
-# boost_report_value(PROJ_LIBRARY_TYPE)
-# boost_report_value(PROJ_LIBRARIES)
-
-# Add path to includes to build-tree export
-target_include_directories(${PROJ_CORE_TARGET} INTERFACE
-  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-  $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>
-)
-
 # Add all targets to the build-tree export set
 export(TARGETS ${PROJ_CORE_TARGET}
     FILE ${PROJECT_BINARY_DIR}/${PACKAGE_UPPER_NAME}Targets.cmake)

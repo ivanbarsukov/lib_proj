@@ -14,9 +14,9 @@ target_compile_options(cct PRIVATE ${PROJ_CXX_WARN_FLAGS})
 install(TARGETS cct
   RUNTIME DESTINATION ${INSTALL_BIN_DIR})
 
-if(MSVC AND BUILD_SHARED_LIBS)
-  target_compile_definitions(cct PRIVATE PROJ_MSVC_DLL_IMPORT=1)
-endif()
+# if(MSVC AND BUILD_SHARED_LIBS)
+#   target_compile_definitions(cct PRIVATE PROJ_MSVC_DLL_IMPORT=1)
+# endif()
 
 if(OSX_FRAMEWORK)
     set_target_properties(cct PROPERTIES INSTALL_RPATH "@executable_path/../../Library/Frameworks")

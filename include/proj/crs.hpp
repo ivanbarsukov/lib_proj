@@ -68,6 +68,12 @@ using BoundCRSPtr = std::shared_ptr<BoundCRS>;
 /** Non-null shared pointer of BoundCRS */
 using BoundCRSNNPtr = util::nn<BoundCRSPtr>;
 
+class CompoundCRS;
+/** Shared pointer of CompoundCRS */
+using CompoundCRSPtr = std::shared_ptr<CompoundCRS>;
+/** Non-null shared pointer of CompoundCRS */
+using CompoundCRSNNPtr = util::nn<CompoundCRSPtr>;
+
 // ---------------------------------------------------------------------------
 
 class CRS;
@@ -136,8 +142,26 @@ class PROJ_GCC_DLL CRS : public common::ObjectUsage,
 
     PROJ_INTERNAL bool mustAxisOrderBeSwitchedForVisualization() const;
 
-    PROJ_INTERNAL CRSNNPtr normalizeForVisualization() const;
+    PROJ_INTERNAL CRSNNPtr applyAxisOrderReversal(const char *nameSuffix) const;
 
+    PROJ_FOR_TEST CRSNNPtr normalizeForVisualization() const;
+
+    PROJ_INTERNAL CRSNNPtr allowNonConformantWKT1Export() const;
+
+    PROJ_INTERNAL CRSNNPtr
+    attachOriginalCompoundCRS(const CompoundCRSNNPtr &compoundCRS) const;
+
+    PROJ_INTERNAL CRSNNPtr promoteTo3D(
+        const std::string &newName, const io::DatabaseContextPtr &dbContext,
+        const cs::CoordinateSystemAxisNNPtr &verticalAxisIfNotAlreadyPresent)
+        const;
+
+    PROJ_INTERNAL bool hasImplicitCS() const;
+
+    PROJ_INTERNAL static CRSNNPtr
+    getResolvedCRS(const CRSNNPtr &crs,
+                   const io::AuthorityFactoryPtr &authFactory,
+                   metadata::ExtentPtr &extentOut);
     //! @endcond
 
   protected:
@@ -150,6 +174,10 @@ class PROJ_GCC_DLL CRS : public common::ObjectUsage,
 
     PROJ_INTERNAL virtual std::list<std::pair<CRSNNPtr, int>>
     _identify(const io::AuthorityFactoryPtr &authorityFactory) const;
+
+    PROJ_INTERNAL void
+    setProperties(const util::PropertyMap
+                      &properties); // throw(InvalidValueTypeException)
 
   private:
     PROJ_OPAQUE_PRIVATE_DATA
@@ -178,7 +206,10 @@ class PROJ_GCC_DLL SingleCRS : public CRS {
         PROJ_INTERNAL void
         exportDatumOrDatumEnsembleToWkt(io::WKTFormatter *formatter)
             const; // throw(io::FormattingException)
-                   //! @endcond
+
+    PROJ_INTERNAL const datum::DatumNNPtr
+    datumNonNull(const io::DatabaseContextPtr &dbContext) const;
+    //! @endcond
 
   protected:
     PROJ_INTERNAL SingleCRS(const datum::DatumPtr &datumIn,
@@ -241,6 +272,8 @@ class PROJ_GCC_DLL GeodeticCRS : virtual public SingleCRS,
 
     PROJ_DLL bool isGeocentric() PROJ_PURE_DECL;
 
+    PROJ_DLL bool isSphericalPlanetocentric() PROJ_PURE_DECL;
+
     PROJ_DLL static GeodeticCRSNNPtr
     create(const util::PropertyMap &properties,
            const datum::GeodeticReferenceFrameNNPtr &datum,
@@ -273,8 +306,14 @@ class PROJ_GCC_DLL GeodeticCRS : virtual public SingleCRS,
         PROJ_INTERNAL void
         addDatumInfoToPROJString(io::PROJStringFormatter *formatter) const;
 
+    PROJ_INTERNAL const datum::GeodeticReferenceFrameNNPtr
+    datumNonNull(const io::DatabaseContextPtr &dbContext) const;
+
     PROJ_INTERNAL void addGeocentricUnitConversionIntoPROJString(
         io::PROJStringFormatter *formatter) const;
+
+    PROJ_INTERNAL void
+    addAngularUnitConvertAndAxisSwap(io::PROJStringFormatter *formatter) const;
 
     PROJ_INTERNAL void _exportToWKT(io::WKTFormatter *formatter)
         const override; // throw(io::FormattingException)
@@ -311,6 +350,11 @@ class PROJ_GCC_DLL GeodeticCRS : virtual public SingleCRS,
 
     PROJ_INTERNAL std::list<std::pair<CRSNNPtr, int>>
     _identify(const io::AuthorityFactoryPtr &authorityFactory) const override;
+
+    PROJ_INTERNAL bool
+    _isEquivalentToNoTypeCheck(const util::IComparable *other,
+                               util::IComparable::Criterion criterion,
+                               const io::DatabaseContextPtr &dbContext) const;
 
     INLINED_MAKE_SHARED
 
@@ -363,18 +407,17 @@ class PROJ_GCC_DLL GeographicCRS : public GeodeticCRS {
 
     PROJ_PRIVATE :
         //! @cond Doxygen_Suppress
-        PROJ_INTERNAL void
-        addAngularUnitConvertAndAxisSwap(
-            io::PROJStringFormatter *formatter) const;
 
-    PROJ_INTERNAL void _exportToPROJString(io::PROJStringFormatter *formatter)
-        const override; // throw(FormattingException)
+        PROJ_INTERNAL void
+        _exportToPROJString(io::PROJStringFormatter *formatter)
+            const override; // throw(FormattingException)
 
     PROJ_INTERNAL void _exportToJSON(io::JSONFormatter *formatter)
         const override; // throw(FormattingException)
 
-    PROJ_DLL bool
-    is2DPartOf3D(util::nn<const GeographicCRS *> other) PROJ_PURE_DECL;
+    PROJ_DLL bool is2DPartOf3D(
+        util::nn<const GeographicCRS *> other,
+        const io::DatabaseContextPtr &dbContext = nullptr) PROJ_PURE_DECL;
 
     PROJ_INTERNAL bool _isEquivalentTo(
         const util::IComparable *other,
@@ -457,6 +500,9 @@ class PROJ_GCC_DLL VerticalCRS : virtual public SingleCRS,
         //! @cond Doxygen_Suppress
         PROJ_INTERNAL void
         addLinearUnitConvert(io::PROJStringFormatter *formatter) const;
+
+    PROJ_INTERNAL const datum::VerticalReferenceFrameNNPtr
+    datumNonNull(const io::DatabaseContextPtr &dbContext) const;
 
     PROJ_INTERNAL void _exportToWKT(io::WKTFormatter *formatter)
         const override; // throw(io::FormattingException)
@@ -850,12 +896,6 @@ class PROJ_GCC_DLL InvalidCompoundCRSException : public util::Exception {
 
 // ---------------------------------------------------------------------------
 
-class CompoundCRS;
-/** Shared pointer of CompoundCRS */
-using CompoundCRSPtr = std::shared_ptr<CompoundCRS>;
-/** Non-null shared pointer of CompoundCRS */
-using CompoundCRSNNPtr = util::nn<CompoundCRSPtr>;
-
 /** \brief A coordinate reference system describing the position of points
  * through two or more independent single coordinate reference systems.
  *
@@ -891,6 +931,14 @@ class PROJ_GCC_DLL CompoundCRS final : public CRS,
     create(const util::PropertyMap &properties,
            const std::vector<CRSNNPtr>
                &components); // throw InvalidCompoundCRSException
+
+    //! @cond Doxygen_Suppress
+    PROJ_INTERNAL static CRSNNPtr
+    createLax(const util::PropertyMap &properties,
+              const std::vector<CRSNNPtr> &components,
+              const io::DatabaseContextPtr
+                  &dbContext); // throw InvalidCompoundCRSException
+                               //! @endcond
 
   protected:
     // relaxed: standard say SingleCRSNNPtr
@@ -966,6 +1014,11 @@ class PROJ_GCC_DLL BoundCRS final : public CRS,
     PROJ_INTERNAL void _exportToWKT(io::WKTFormatter *formatter)
         const override; // throw(io::FormattingException)
     //! @endcond
+
+    PROJ_DLL static BoundCRSNNPtr
+    create(const util::PropertyMap &properties, const CRSNNPtr &baseCRSIn,
+           const CRSNNPtr &hubCRSIn,
+           const operation::TransformationNNPtr &transformationIn);
 
     PROJ_DLL static BoundCRSNNPtr
     create(const CRSNNPtr &baseCRSIn, const CRSNNPtr &hubCRSIn,
@@ -1128,6 +1181,10 @@ class PROJ_GCC_DLL DerivedGeographicCRS final : public GeographicCRS,
            const GeodeticCRSNNPtr &baseCRSIn,
            const operation::ConversionNNPtr &derivingConversionIn,
            const cs::EllipsoidalCSNNPtr &csIn);
+
+    PROJ_DLL DerivedGeographicCRSNNPtr
+    demoteTo2D(const std::string &newName,
+               const io::DatabaseContextPtr &dbContext) const;
 
     //! @cond Doxygen_Suppress
     PROJ_INTERNAL void _exportToWKT(io::WKTFormatter *formatter)
@@ -1371,6 +1428,7 @@ class PROJ_GCC_DLL DerivedCRSTemplate final : public DerivedCRSTraits::BaseType,
     DerivedCRSTemplate(const BaseNNPtr &baseCRSIn,
                        const operation::ConversionNNPtr &derivingConversionIn,
                        const CSNNPtr &csIn);
+    // cppcheck-suppress noExplicitConstructor
     PROJ_INTERNAL DerivedCRSTemplate(const DerivedCRSTemplate &other);
 
     PROJ_INTERNAL CRSNNPtr _shallowClone() const override;

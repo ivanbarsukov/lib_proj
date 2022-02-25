@@ -160,6 +160,21 @@ class Cache {
     keys_.splice(keys_.begin(), keys_, iter->second);
     return iter->second->value;
   }
+
+  /**
+   *	The const reference returned here is only
+   *    guaranteed to be valid till the next insert/delete
+   */
+  const Value* getPtr(const Key& k) {
+    Guard g(lock_);
+    const auto iter = cache_.find(k);
+    if (iter == cache_.end()) {
+      return nullptr;
+    }
+    keys_.splice(keys_.begin(), keys_, iter->second);
+    return &(iter->second->value);
+  }
+
   /**
    * returns a copy of the stored object (if found)
    */
@@ -206,7 +221,7 @@ class Cache {
   }
 
  private:
-  // Dissallow copying.
+  // Disallow copying.
   Cache(const Cache&) = delete;
   Cache& operator=(const Cache&) = delete;
 
