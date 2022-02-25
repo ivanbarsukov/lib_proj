@@ -36,7 +36,7 @@ if(UNIX)
 
     add_custom_target(invproj ALL DEPENDS ${link_target})
 
-    install(FILES ${link_target} RUNTIME DESTINATION ${INSTALL_BIN_DIR})
+    install(FILES ${link_target} DESTINATION ${INSTALL_BIN_DIR})
 
 else()
 
