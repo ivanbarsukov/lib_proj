@@ -525,12 +525,12 @@ if(NOT SKIP_INSTALL_LIBRARIES AND NOT SKIP_INSTALL_ALL )
     endif()
 endif()
 
-# if(NOT SKIP_INSTALL_HEADERS AND NOT SKIP_INSTALL_ALL )
-#   install(FILES ${ALL_LIBPROJ_HEADERS} DESTINATION ${INSTALL_INC_DIR})
-#   if(UNIX AND NOT OSX_FRAMEWORK)
-#         install(FILES ${CMAKE_BINARY_DIR}/proj.pc DESTINATION ${INSTALL_PKGCONFIG_DIR} COMPONENT libraries)
-#     endif()
-# endif()
+if(NOT SKIP_INSTALL_HEADERS AND NOT SKIP_INSTALL_ALL )
+  install(FILES ${ALL_LIBPROJ_HEADERS} DESTINATION ${INSTALL_INC_DIR})
+  if(UNIX AND NOT OSX_FRAMEWORK)
+        install(FILES ${CMAKE_BINARY_DIR}/proj.pc DESTINATION ${INSTALL_PKGCONFIG_DIR} COMPONENT libraries)
+    endif()
+endif()
 
 ##############################################
 # Core configuration summary
