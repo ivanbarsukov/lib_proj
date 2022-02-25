@@ -70,12 +70,12 @@ endfunction()
 function(configure_proj_pc)
   set(prefix "${CMAKE_INSTALL_PREFIX}")
   set(exec_prefix "$\{prefix\}")
-  set(libdir "$\{exec_prefix\}/${PROJ_LIB_SUBDIR}")
-  set(includedir "$\{prefix\}/${PROJ_INCLUDE_SUBDIR}")
-  set(datarootdir "$\{prefix\}/${CMAKE_INSTALL_DATAROOTDIR}")
+  set(libdir "$\{exec_prefix\}/${INSTALL_LIB_DIR}")
+  set(includedir "$\{prefix\}/${INSTALL_INC_DIR}")
+  set(datarootdir "$\{prefix\}/${INSTALL_DATA_DIR}")
   set(datadir "$\{datarootdir\}")
   set(PACKAGE "proj")
-  set(VERSION ${PROJ_VERSION})
+  set(VERSION ${VERSION})
   # Build list for Libs.private
   set(EXTRA_LIBS
     -lstdc++
@@ -100,6 +100,6 @@ function(configure_proj_pc)
 
   configure_file(
     ${CMAKE_CURRENT_SOURCE_DIR}/proj.pc.in
-    ${CMAKE_CURRENT_BINARY_DIR}/proj.pc
+    ${CMAKE_BINARY_DIR}/proj.pc
     @ONLY)
 endfunction()

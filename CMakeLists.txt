@@ -306,6 +306,14 @@ if(BUILD_TESTING)
   add_subdirectory(test)
 endif()
 
+################################################################################
+# pkg-config support
+################################################################################
+if(UNIX OR MINGW)
+    include(ProjUtilities)
+    configure_proj_pc()
+endif()
+
 add_custom_target(uninstall COMMAND ${CMAKE_COMMAND} -P ${CMAKE_CURRENT_BINARY_DIR}/cmake_uninstall.cmake)
 
 # Export package ===============================================================
