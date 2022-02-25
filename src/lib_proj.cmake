@@ -302,7 +302,6 @@ set(HEADERS_PUBLIC
   ${CMAKE_SOURCE_DIR}/include/proj/crs.hpp 
   ${CMAKE_SOURCE_DIR}/include/proj/datum.hpp
   ${CMAKE_SOURCE_DIR}/include/proj/coordinatesystem.hpp 
-  ${CMAKE_SOURCE_DIR}/include/proj/coordinateoperation.hpp 
   ${CMAKE_SOURCE_DIR}/include/proj/io.hpp 
   ${CMAKE_SOURCE_DIR}/include/proj/nn.hpp
 )
