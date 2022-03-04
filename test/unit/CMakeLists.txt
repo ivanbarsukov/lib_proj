@@ -161,11 +161,17 @@ set(TEST_DEPENDENCIES
     lib_lzma
     lib_webp
 )
-if(WIN32)
-    # TODO: Download and copy DLLs
+if(WIN32)    
+    find_anyproject(JPEG REQUIRED)
+    find_anyproject(JBIG REQUIRED)
+    find_anyproject(LIBLZMA REQUIRED)
+    find_anyproject(WEBP REQUIRED)
+    find_anyproject(OPENSSL REQUIRED)
+    find_anyproject(ZLIB REQUIRED)
+    
     add_custom_command(TARGET proj_errno_string_test
         POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -DDST_PATH="${CMAKE_LIBRARY_OUTPUT_DIRECTORY}" -DSRC_PATH="${PROJECT_BINARY_DIR}" -P ${PROJECT_SOURCE_DIR}/cmake/test_dependency_win.cmake
+        COMMAND ${CMAKE_COMMAND} -DDST_PATH=$<TARGET_FILE_DIR:proj_errno_string_test> -DSRC_PATH="${PROJECT_BINARY_DIR}" -P ${PROJECT_SOURCE_DIR}/cmake/test_dependency_win.cmake
         COMMENT "Copy DLLs"
     )
 elseif(OSX_FRAMEWORK)
