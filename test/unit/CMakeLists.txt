@@ -161,21 +161,26 @@ set(TEST_DEPENDENCIES
     lib_lzma
     lib_webp
 )
+
 if(WIN32)
-    # TODO: Download and copy DLLs
+    set(TEST_DEPENDENCIES ${TEST_DEPENDENCIES} lib_z)
+    set(DST_PATH "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${CMAKE_BUILD_TYPE}")
+    
+    file(GLOB_RECURSE IMPORTED_WIN_DLLS ${PROJECT_BINARY_DIR}/third-party/*.dll)
+    message("Copy files to ${DST_PATH}\nFiles:\n${IMPORTED_WIN_DLLS}")
+    foreach(IMPORTED_WIN_DLL ${IMPORTED_WIN_DLLS})
+        file(COPY ${IMPORTED_WIN_DLL} DESTINATION ${DST_PATH})
+    endforeach()
+elseif(OSX_FRAMEWORK)
+    set(DST_PATH "${CMAKE_LIBRARY_OUTPUT_DIRECTORY}")
+endif()
+
+get_compiler_version(COMPILER)
+
+foreach(TEST_DEPENDENCY ${TEST_DEPENDENCIES})
     add_custom_command(TARGET proj_errno_string_test
         POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -DDST_PATH="${CMAKE_LIBRARY_OUTPUT_DIRECTORY}" -DSRC_PATH="${PROJECT_BINARY_DIR}" -P ${PROJECT_SOURCE_DIR}/cmake/test_dependency_win.cmake
-        COMMENT "Copy DLLs"
+        COMMAND ${CMAKE_COMMAND} -DDST_PATH=${DST_PATH} -DSRC_PATH="${PROJECT_BINARY_DIR}" -DREPKA_PACKAGE="${TEST_DEPENDENCY}" -DCOMPILER="${COMPILER}" -P ${PROJECT_SOURCE_DIR}/cmake/test_dependency.cmake
+        COMMENT "Get dependency ${TEST_DEPENDENCY}"
     )
-elseif(OSX_FRAMEWORK)
-    get_compiler_version(COMPILER)
-    foreach(TEST_DEPENDENCY ${TEST_DEPENDENCIES})
-        add_custom_command(TARGET proj_errno_string_test
-            POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -DDST_PATH="${CMAKE_LIBRARY_OUTPUT_DIRECTORY}" -DSRC_PATH="${PROJECT_BINARY_DIR}" -DREPKA_PACKAGE="${TEST_DEPENDENCY}" -DCOMPILER="${COMPILER}" -P ${PROJECT_SOURCE_DIR}/cmake/test_dependency_mac.cmake
-            COMMENT "Get framework ${TEST_DEPENDENCY}"
-        )
-    endforeach()
-    
-endif()
+endforeach()

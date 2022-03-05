@@ -59,14 +59,22 @@ if(BINARY_URL)
         WORKING_DIRECTORY ${DST_PATH}
     )
 
-    file(GLOB_RECURSE _FRAMEWORKS LIST_DIRECTORIES true ${DST_PATH}/${BINARY_NAME}/Library/Frameworks/*.framework)
-    foreach(_FRAMEWORK ${_FRAMEWORKS})
-        get_filename_component(FRAMEWORK_NAME ${_FRAMEWORK} NAME)
-        if(FRAMEWORK_NAME MATCHES ".*framework")
-            execute_process(
-                COMMAND ${CMAKE_COMMAND} -E rename ${_FRAMEWORK} ${DST_PATH}/${FRAMEWORK_NAME} 
-                WORKING_DIRECTORY ${DST_PATH}
-            )
-        endif()
-    endforeach()
+    if(WIN32)
+        file(GLOB_RECURSE IMPORTED_WIN_DLLS ${DST_PATH}/${BINARY_NAME}/bin/*.dll)
+        message("Copy files to ${DST_PATH}\nFiles:\n${IMPORTED_WIN_DLLS}")
+        foreach(IMPORTED_WIN_DLL ${IMPORTED_WIN_DLLS})
+            file(COPY ${IMPORTED_WIN_DLL} DESTINATION ${DST_PATH})
+        endforeach()
+    elseif(OSX_FRAMEWORK)
+        file(GLOB_RECURSE _FRAMEWORKS LIST_DIRECTORIES true ${DST_PATH}/${BINARY_NAME}/Library/Frameworks/*.framework)
+        foreach(_FRAMEWORK ${_FRAMEWORKS})
+            get_filename_component(FRAMEWORK_NAME ${_FRAMEWORK} NAME)
+            if(FRAMEWORK_NAME MATCHES ".*framework")
+                execute_process(
+                    COMMAND ${CMAKE_COMMAND} -E rename ${_FRAMEWORK} ${DST_PATH}/${FRAMEWORK_NAME} 
+                    WORKING_DIRECTORY ${DST_PATH}
+                )
+            endif()
+        endforeach()
+    endif()
 endif()
