@@ -165,12 +165,12 @@ set(TEST_DEPENDENCIES
 if(WIN32)
     set(TEST_DEPENDENCIES ${TEST_DEPENDENCIES} lib_z)
     set(DST_PATH "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${CMAKE_BUILD_TYPE}")
-    
-    file(GLOB_RECURSE IMPORTED_WIN_DLLS ${PROJECT_BINARY_DIR}/third-party/*.dll)
-    message("Copy files to ${DST_PATH}\nFiles:\n${IMPORTED_WIN_DLLS}")
-    foreach(IMPORTED_WIN_DLL ${IMPORTED_WIN_DLLS})
-        file(COPY ${IMPORTED_WIN_DLL} DESTINATION ${DST_PATH})
-    endforeach()
+
+    add_custom_command(TARGET proj_errno_string_test
+        POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -DDST_PATH=${DST_PATH} -DSRC_PATH="${PROJECT_BINARY_DIR}" -P ${PROJECT_SOURCE_DIR}/cmake/test_dependency_win.cmake
+        COMMENT "Copy compiled dll files"
+    )
 elseif(OSX_FRAMEWORK)
     set(DST_PATH "${CMAKE_LIBRARY_OUTPUT_DIRECTORY}")
 endif()
