@@ -180,7 +180,7 @@ get_compiler_version(COMPILER)
 foreach(TEST_DEPENDENCY ${TEST_DEPENDENCIES})
     add_custom_command(TARGET proj_errno_string_test
         POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -DDST_PATH=${DST_PATH} -DSRC_PATH="${PROJECT_BINARY_DIR}" -DREPKA_PACKAGE="${TEST_DEPENDENCY}" -DCOMPILER="${COMPILER}" -P ${PROJECT_SOURCE_DIR}/cmake/test_dependency.cmake
+        COMMAND ${CMAKE_COMMAND} -DDST_PATH="${DST_PATH}" -DSRC_PATH="${PROJECT_BINARY_DIR}" -DREPKA_PACKAGE="${TEST_DEPENDENCY}" -DCOMPILER="${COMPILER}" -DOSX_FRAMEWORK="${OSX_FRAMEWORK}" -P ${PROJECT_SOURCE_DIR}/cmake/test_dependency.cmake
         COMMENT "Get dependency ${TEST_DEPENDENCY}"
     )
 endforeach()
