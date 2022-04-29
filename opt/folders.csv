@@ -1,6 +1,6 @@
 .,.,,"AUTHORS,ChangeLog,COPYING,INSTALL,README"
 cmake,cmake,,"ProjConfig.cmake,policies.cmake,proj_config.cmake.in"
-data,data,,"world,other.extra,nad27,GL27,nad83,nad.lst,CH,ITRF2000,ITRF2008,ITRF2014,cmake,ini"
+data,data,,"world,extra,nad27,GL27,nad83,lst,CH,ITRF2000,ITRF2008,ITRF2014,cmake,ini,json"
 data/sql,data/sql,,sql
 data/tests,data/tests,,*
 include,include,,"h,hpp"

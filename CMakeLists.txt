@@ -154,12 +154,9 @@ if(OSX_FRAMEWORK)
     set(INSTALL_MAN_DIR ${INSTALL_LIB_DIR}/${PROJECT_NAME}.framework/Versions/${FRAMEWORK_VERSION}/Resources/man CACHE INTERNAL "Man files directory" FORCE)
 endif()
 
-# set(PROJ_API_VERSION "1${PROJECT_VERSION_MAJOR}")
-# set(PROJ_BUILD_VERSION "1${VERSION}")
-set(PROJ_API_VERSION "22")
-set(PROJ_BUILD_VERSION "22.0.0")
+set(PROJ_SOVERSION 25)
+set(PROJ_BUILD_VERSION "${PROJ_SOVERSION}.${PROJ_VERSION}")
 
-set(API_VERSION ${PROJ_API_VERSION})
 report_version(${PROJECT_NAME} "${VERSION}")
 
 ################################################################################
@@ -171,6 +168,45 @@ include(ProjConfig)
 include(policies)
 
 configure_file(${CMAKE_SOURCE_DIR}/cmake/cmake_uninstall.cmake.in ${CMAKE_CURRENT_BINARY_DIR}/cmake_uninstall.cmake IMMEDIATE @ONLY)
+
+################################################################################
+# Check for nlohmann_json
+################################################################################
+
+set(NLOHMANN_JSON_ORIGIN "auto" CACHE STRING
+"nlohmann/json origin. The default auto will try to use external \
+nlohmann/json if possible")
+set_property(CACHE NLOHMANN_JSON_ORIGIN PROPERTY STRINGS auto internal external)
+
+# Probably not the strictest minimum, but known to work with it
+set(MIN_NLOHMANN_JSON_VERSION 3.7.0)
+
+if(NLOHMANN_JSON_ORIGIN STREQUAL "external")
+  find_package(nlohmann_json REQUIRED)
+  set(NLOHMANN_JSON "external")
+elseif(NLOHMANN_JSON_ORIGIN STREQUAL "internal")
+  set(NLOHMANN_JSON "internal")
+else()
+  find_package(nlohmann_json QUIET)
+  if(nlohmann_json_FOUND)
+    set(NLOHMANN_JSON "external")
+  else()
+    set(NLOHMANN_JSON "internal")
+  endif()
+endif()
+
+if(NLOHMANN_JSON STREQUAL "external")
+  # Check minimum version
+  if(nlohmann_json_VERSION VERSION_LESS MIN_NLOHMANN_JSON_VERSION)
+    message(STATUS "external nlohmann/json version ${nlohmann_json_VERSION} "
+      "is older than minimum requirement ${MIN_NLOHMANN_JSON_VERSION}")
+    set(NLOHMANN_JSON "internal")
+  else()
+    message(STATUS "found nlohmann/json version ${nlohmann_json_VERSION}")
+  endif()
+endif()
+
+message(STATUS "nlohmann/json: ${NLOHMANN_JSON}")
 
 ################################################################################
 # Check for sqlite3

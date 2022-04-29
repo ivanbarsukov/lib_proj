@@ -447,8 +447,8 @@ elseif(OSX_FRAMEWORK)
 else()
   set_target_properties(${PROJ_CORE_TARGET}
     PROPERTIES
-    VERSION "${VERSION}"
-    SOVERSION "${API_VERSION}"
+    VERSION "${PROJ_BUILD_VERSION}"
+    SOVERSION "${PROJ_SOVERSION}"
     CLEAN_DIRECT_OUTPUT 1)
 endif()
 
@@ -481,6 +481,12 @@ endif()
 
 # include_directories(${SQLITE3_INCLUDE_DIR})
 # target_link_libraries(${PROJ_CORE_TARGET} ${SQLITE3_LIBRARY})
+
+if(NLOHMANN_JSON STREQUAL "external")
+  target_compile_definitions(proj PRIVATE EXTERNAL_NLOHMANN_JSON)
+  target_link_libraries(proj
+    PRIVATE $<BUILD_INTERFACE:nlohmann_json::nlohmann_json>)
+endif()
 
 if(TIFF_ENABLED)
   target_compile_definitions(${PROJ_CORE_TARGET} PRIVATE -DTIFF_ENABLED)

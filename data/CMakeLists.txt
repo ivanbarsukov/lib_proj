@@ -40,7 +40,6 @@ if(GENERATE_PROJ_DB)
     endif()
 
     set(ALL_SQL_IN "${CMAKE_CURRENT_BINARY_DIR}/all.sql.in")
-    set(PROJ_DB "${CMAKE_CURRENT_BINARY_DIR}/proj.db")
     include(sql_filelist.cmake)
 
     add_custom_command(
