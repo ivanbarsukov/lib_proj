@@ -51,6 +51,7 @@
 #define _USE_MATH_DEFINES  // needed for M_1_PI availability with MSVC
 
 #include <errno.h>
+#include <cstdint>
 #include <cmath>
 
 #include "proj.h"
@@ -112,7 +113,7 @@ static int LargestAbsComponent(const PJ_XYZ& p) {
 }
 
 // =================================================
-// 
+//
 //              S2 Projection Functions
 //
 // =================================================
@@ -309,7 +310,7 @@ static PJ_XY s2_forward (PJ_LP lp, PJ *P) {
     return {s, t};
 }
 
-static PJ_LP s2_inverse (PJ_XY xy, PJ *P) {     
+static PJ_LP s2_inverse (PJ_XY xy, PJ *P) {
     PJ_LP lp = {0.0,0.0};
     struct pj_opaque *Q = static_cast<struct pj_opaque*>(P->opaque);
 
@@ -326,7 +327,7 @@ static PJ_LP s2_inverse (PJ_XY xy, PJ *P) {
     // Get the spherical angles from the x y z
     lp.phi = acos(-s) - M_HALFPI;
     lp.lam = atan2(r, q);
-    
+
     /* Apply the shift from the sphere to the ellipsoid as described
      * in [LK12]. */
     if (P->es != 0.0) {
